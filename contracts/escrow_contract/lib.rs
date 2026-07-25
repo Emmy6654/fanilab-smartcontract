@@ -15,6 +15,7 @@ pub mod constants {
     pub const ESCROW_TTL_EXTEND_TO: u32 = 518400;
     pub const PROTOCOL_VERSION: u32 = 1;
     pub const DEFAULT_ESCROW_EXPIRY_SECONDS: u64 = 30 * 24 * 60 * 60; // 30 days
+    pub const MAX_PLATFORM_FEE_BPS: u32 = 1000;
 }
 
 fn require_admin(env: &Env, caller: &Address) {
@@ -58,9 +59,31 @@ fn get_settlement_contract(env: &Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::SettlementContract)
 }
 
-fn payout_driver(env: &Env, token: &Address, driver: &Address, amount: i128) {
+fn get_fleet_management_contract(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::FleetManagementContract)
+}
+
+fn payout_driver(
+    env: &Env,
+    token: &Address,
+    driver: &Address,
+    amount: i128,
+    fleet_management_addr: Option<&Address>,
+    fleet_id: Option<u64>,
+) {
     if amount <= 0 {
         return;
+    }
+
+    let mut payout_address = driver.clone();
+
+    if let (Some(fleet_addr), Some(fid)) = (fleet_management_addr, fleet_id) {
+        let treasury: Address = env.invoke_contract(
+            fleet_addr,
+            &Symbol::new(env, "get_payout_address"),
+            soroban_sdk::vec![env, driver.into_val(env), fid.into_val(env)],
+        );
+        payout_address = treasury;
     }
 
     if let Some(settlement_addr) = get_settlement_contract(env) {
@@ -82,7 +105,7 @@ fn payout_driver(env: &Env, token: &Address, driver: &Address, amount: i128) {
                         env.current_contract_address().into_val(env),
                         token.into_val(env),
                         preferred_asset.into_val(env),
-                        driver.into_val(env),
+                        payout_address.into_val(env),
                         amount.into_val(env),
                         min_amount_out.into_val(env),
                     ],
@@ -92,7 +115,7 @@ fn payout_driver(env: &Env, token: &Address, driver: &Address, amount: i128) {
         }
     }
 
-    token::Client::new(env, token).transfer(&env.current_contract_address(), driver, &amount);
+    token::Client::new(env, token).transfer(&env.current_contract_address(), &payout_address, &amount);
 }
 
 fn save_escrow(env: &Env, delivery_id: u64, record: &EscrowRecord) {
@@ -125,6 +148,8 @@ fn load_escrow(env: &Env, delivery_id: u64) -> EscrowRecord {
 enum DataKey {
     PendingAdmin,
     SettlementContract,
+    FleetManagementContract,
+    DisputeResolutionContract,
 }
 
 #[contracterror]
@@ -171,6 +196,9 @@ impl EscrowContract {
         if env.storage().instance().has(&StorageKey::Admin) {
             panic_with_error!(&env, FaniLabError::AlreadyInitialized);
         }
+        if platform_fee_bps > constants::MAX_PLATFORM_FEE_BPS {
+            panic_with_error!(&env, EscrowError::InvalidFee);
+        }
         env.storage().instance().set(&StorageKey::Admin, &admin);
         save_protocol_config(
             &env,
@@ -203,7 +231,7 @@ impl EscrowContract {
             panic_with_error!(&env, FaniLabError::Unauthorized);
         }
         admin.require_auth();
-        if new_fee_bps > 1000 {
+        if new_fee_bps > constants::MAX_PLATFORM_FEE_BPS {
             panic_with_error!(&env, EscrowError::InvalidFee);
         }
         let mut config = load_protocol_config(&env);
@@ -284,6 +312,30 @@ impl EscrowContract {
         get_settlement_contract(&env)
     }
 
+    pub fn set_fleet_management_contract(env: Env, admin: Address, fleet_contract: Address) {
+    pub fn set_dispute_resolution_contract(
+        env: Env,
+        admin: Address,
+        dispute_contract: Address,
+    ) {
+        admin.require_auth();
+        require_admin(&env, &admin);
+        env.storage()
+            .instance()
+            .set(&DataKey::FleetManagementContract, &fleet_contract);
+    }
+
+    pub fn get_fleet_management_contract(env: Env) -> Option<Address> {
+        get_fleet_management_contract(&env)
+            .set(&DataKey::DisputeResolutionContract, &dispute_contract);
+    }
+
+    pub fn get_dispute_resolution_contract(env: Env) -> Option<Address> {
+        env.storage()
+            .instance()
+            .get(&DataKey::DisputeResolutionContract)
+    }
+
     pub fn propose_admin(env: Env, current_admin: Address, new_admin: Address) {
         current_admin.require_auth();
         let stored_admin: Address = env
@@ -340,6 +392,7 @@ impl EscrowContract {
         delivery_id: u64,
         token: Address,
         amount: i128,
+        fleet_id: Option<u64>,
     ) {
         sender.require_auth();
         if amount <= 0 {
@@ -369,11 +422,30 @@ impl EscrowContract {
                 expires_at: Some(expires_at),
                 disputed_by: None,
                 disputed_at: None,
+                fleet_id,
             },
         );
         env.events().publish(
             (events::escrow_funded(&env), delivery_id),
             (sender, recipient, amount),
+        );
+    }
+
+    pub fn mark_holdback_escrow(env: Env, caller: Address, delivery_id: u64) {
+        caller.require_auth();
+        let mut record = load_escrow(&env, delivery_id);
+        let recipient_authorized = caller == record.recipient;
+        if !recipient_authorized {
+            panic_with_error!(&env, FaniLabError::Unauthorized);
+        }
+        if record.status != EscrowStatus::Locked {
+            panic_with_error!(&env, EscrowError::InvalidState);
+        }
+        record.status = EscrowStatus::Holdback;
+        save_escrow(&env, delivery_id, &record);
+        env.events().publish(
+            (Symbol::new(&env, "escrow_holdback_marked"), delivery_id),
+            (caller, env.ledger().timestamp()),
         );
     }
 
@@ -403,7 +475,15 @@ impl EscrowContract {
         let platform_fee = calculate_fee(record.amount, platform_fee_bps);
         let driver_amount = record.amount.saturating_sub(platform_fee);
 
-        payout_driver(&env, &record.token, &record.driver, driver_amount);
+        let fleet_management = get_fleet_management_contract(&env);
+        payout_driver(
+            &env,
+            &record.token,
+            &record.driver,
+            driver_amount,
+            fleet_management.as_ref(),
+            record.fleet_id,
+        );
 
         if platform_fee > 0 {
             let admin: Address = env
@@ -434,7 +514,10 @@ impl EscrowContract {
         if !admin_authorized && !sender_authorized {
             panic_with_error!(&env, FaniLabError::Unauthorized);
         }
-        if record.status != EscrowStatus::Locked && record.status != EscrowStatus::Paused {
+        if record.status != EscrowStatus::Locked
+            && record.status != EscrowStatus::Paused
+            && record.status != EscrowStatus::Holdback
+        {
             panic_with_error!(&env, EscrowError::InvalidState);
         }
         // Balance verification guard: confirm contract holds sufficient funds before transfer
@@ -493,7 +576,15 @@ impl EscrowContract {
             let platform_fee = calculate_fee(record.amount, platform_fee_bps);
             let driver_amount = record.amount.saturating_sub(platform_fee);
 
-            payout_driver(&env, &record.token, &record.driver, driver_amount);
+            let fleet_management = get_fleet_management_contract(&env);
+            payout_driver(
+                &env,
+                &record.token,
+                &record.driver,
+                driver_amount,
+                fleet_management.as_ref(),
+                record.fleet_id,
+            );
 
             if platform_fee > 0 {
                 let admin: Address = env
@@ -510,6 +601,11 @@ impl EscrowContract {
 
             record.status = EscrowStatus::Released;
         } else {
+            let contract_balance =
+                token::Client::new(&env, &record.token).balance(&env.current_contract_address());
+            if contract_balance < record.amount {
+                panic_with_error!(&env, EscrowError::InsufficientFunds);
+            }
             token::Client::new(&env, &record.token).transfer(
                 &env.current_contract_address(),
                 &record.sender,
@@ -565,12 +661,61 @@ impl EscrowContract {
             );
         }
 
-        record.status = EscrowStatus::Refunded;
+        record.status = EscrowStatus::Split;
         save_escrow(&env, delivery_id, &record);
 
         env.events().publish(
             (events::dispute_resolved(&env), delivery_id),
             (caller.clone(), caller),
+        );
+    }
+
+    pub fn release_holdback_escrow(env: Env, caller: Address, delivery_id: u64) {
+        caller.require_auth();
+        let mut record = load_escrow(&env, delivery_id);
+        let admin_authorized = is_admin(&env, &caller);
+        let recipient_authorized = caller == record.recipient;
+        if !admin_authorized && !recipient_authorized {
+            panic_with_error!(&env, FaniLabError::Unauthorized);
+        }
+        if record.status != EscrowStatus::Holdback {
+            panic_with_error!(&env, EscrowError::InvalidState);
+        }
+        // Balance verification guard: confirm contract holds sufficient funds before transfer
+        let contract_balance =
+            token::Client::new(&env, &record.token).balance(&env.current_contract_address());
+        if contract_balance < record.amount {
+            panic_with_error!(&env, EscrowError::InsufficientFunds);
+        }
+        let platform_fee_bps: u32 = env
+            .storage()
+            .instance()
+            .get::<_, ProtocolConfig>(&StorageKey::ProtocolConfig)
+            .map(|config| config.platform_fee_bps)
+            .unwrap_or(0);
+        let platform_fee = calculate_fee(record.amount, platform_fee_bps);
+        let driver_amount = record.amount.saturating_sub(platform_fee);
+
+        payout_driver(&env, &record.token, &record.driver, driver_amount);
+
+        if platform_fee > 0 {
+            let admin: Address = env
+                .storage()
+                .instance()
+                .get(&StorageKey::Admin)
+                .expect("Not initialized");
+            token::Client::new(&env, &record.token).transfer(
+                &env.current_contract_address(),
+                &admin,
+                &platform_fee,
+            );
+        }
+
+        record.status = EscrowStatus::Released;
+        save_escrow(&env, delivery_id, &record);
+        env.events().publish(
+            (events::escrow_released(&env), delivery_id),
+            (record.driver, driver_amount, platform_fee),
         );
     }
 
@@ -581,12 +726,25 @@ impl EscrowContract {
         load_escrow(&env, delivery_id)
     }
 
-    pub fn freeze_funds(env: Env, delivery_id: u64) {
+    pub fn freeze_funds(env: Env, caller: Address, delivery_id: u64) {
+        caller.require_auth();
+        let dispute_contract = env
+            .storage()
+            .instance()
+            .get(&DataKey::DisputeResolutionContract)
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::NotInitialized));
+        if caller != dispute_contract {
+            panic_with_error!(&env, FaniLabError::Unauthorized);
+        }
         let mut record = load_escrow(&env, delivery_id);
-        if record.status == EscrowStatus::Locked {
+        if record.status == EscrowStatus::Locked || record.status == EscrowStatus::Holdback {
             record.status = EscrowStatus::Paused;
             record.disputed_at = Some(env.ledger().timestamp());
             save_escrow(&env, delivery_id, &record);
+            env.events().publish(
+                (Symbol::new(&env, "funds_frozen"), delivery_id),
+                (caller, env.ledger().timestamp()),
+            );
         }
     }
 
