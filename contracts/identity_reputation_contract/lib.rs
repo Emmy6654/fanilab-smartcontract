@@ -1,6 +1,11 @@
 #![no_std]
 #![allow(deprecated)] // events().publish() is deprecated in SDK 27.0.0 but still functional
 
+use shared_types::{
+    events, DriverRegisteredEvent, KycStatusUpdatedEvent, ReputationDecreasedEvent,
+    ReputationIncreasedEvent, UserRegisteredEvent, FaniLabError,
+};
+use soroban_sdk::{contract, contractimpl, contracttype, panic_with_error, Address, Env};
 use shared_types::{DriverProfile, FaniLabError};
 use soroban_sdk::{contract, contractimpl, contracttype, panic_with_error, Address, Env, Symbol};
 
@@ -112,7 +117,7 @@ impl IdentityReputationContract {
         env.storage().persistent().extend_ttl(&key, 518400, 518400);
 
         env.events()
-            .publish((Symbol::new(&env, "driver_registered"),), (driver,));
+            .publish((events::driver_registered(&env),), DriverRegisteredEvent { driver });
     }
 
     pub fn register_user(env: Env, user: Address) -> UserProfile {
@@ -134,7 +139,7 @@ impl IdentityReputationContract {
         env.storage().persistent().extend_ttl(&key, 518400, 518400);
 
         env.events()
-            .publish((Symbol::new(&env, "user_registered"),), (user,));
+            .publish((events::user_registered(&env),), UserRegisteredEvent { user });
 
         profile
     }
@@ -185,8 +190,8 @@ impl IdentityReputationContract {
         env.storage().persistent().extend_ttl(&key, 518400, 518400);
 
         env.events().publish(
-            (Symbol::new(&env, "kyc_status_updated"),),
-            (driver, kyc_verified),
+            (events::kyc_status_updated(&env),),
+            KycStatusUpdatedEvent { driver, kyc_verified },
         );
     }
 
@@ -236,8 +241,12 @@ impl IdentityReputationContract {
         env.storage().persistent().extend_ttl(&key, 518400, 518400);
 
         env.events().publish(
-            (Symbol::new(&env, "reputation_increased"),),
-            (driver, delivery_id, points),
+            (events::reputation_increased(&env),),
+            ReputationIncreasedEvent {
+                driver,
+                delivery_id,
+                points,
+            },
         );
     }
 
@@ -271,8 +280,8 @@ impl IdentityReputationContract {
         env.storage().persistent().extend_ttl(&key, 518400, 518400);
 
         env.events().publish(
-            (Symbol::new(&env, "reputation_decreased"),),
-            (driver, points),
+            (events::reputation_decreased(&env),),
+            ReputationDecreasedEvent { driver, points },
         );
     }
 

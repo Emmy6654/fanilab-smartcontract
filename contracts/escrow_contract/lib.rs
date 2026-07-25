@@ -455,6 +455,7 @@ impl EscrowContract {
             &env.current_contract_address(),
             &amount,
         );
+        let record_token_clone = token.clone();
         let created_at = env.ledger().timestamp();
         let expires_at = created_at.saturating_add(constants::DEFAULT_ESCROW_EXPIRY_SECONDS);
         save_escrow(
@@ -525,8 +526,13 @@ impl EscrowContract {
         );
 
         env.events().publish(
-            (events::escrow_funded(&env), delivery_id),
-            (sender, recipient, amount),
+            (events::escrow_funded(&env),),
+            shared_types::EscrowFundedEvent {
+                delivery_id,
+                sender,
+                token: record_token_clone,
+                amount,
+            },
         );
     }
 
@@ -719,8 +725,13 @@ impl EscrowContract {
         record.status = EscrowStatus::Released;
         save_escrow(&env, delivery_id, &record);
         env.events().publish(
-            (events::escrow_released(&env), delivery_id),
-            (record.driver, driver_amount, platform_fee),
+            (events::escrow_released(&env),),
+            shared_types::EscrowReleasedEvent {
+                delivery_id,
+                driver: record.driver,
+                amount: driver_amount,
+                platform_fee,
+            },
         );
     }
 
@@ -753,8 +764,12 @@ impl EscrowContract {
         record.status = EscrowStatus::Refunded;
         save_escrow(&env, delivery_id, &record);
         env.events().publish(
-            (events::escrow_refunded(&env), delivery_id),
-            (record.sender, record.amount),
+            (events::escrow_refunded(&env),),
+            shared_types::EscrowRefundedEvent {
+                delivery_id,
+                sender: record.sender,
+                amount: record.amount,
+            },
         );
     }
 
@@ -773,8 +788,12 @@ impl EscrowContract {
         record.disputed_at = Some(timestamp);
         save_escrow(&env, delivery_id, &record);
         env.events().publish(
-            (events::delivery_disputed(&env), delivery_id),
-            (caller, timestamp),
+            (events::delivery_disputed(&env),),
+            shared_types::DeliveryDisputedEvent {
+                delivery_id,
+                reporter: caller,
+                timestamp,
+            },
         );
     }
 
@@ -837,8 +856,11 @@ impl EscrowContract {
         save_escrow(&env, delivery_id, &record);
 
         env.events().publish(
-            (events::dispute_resolved(&env), delivery_id),
-            (caller.clone(), caller),
+            (events::dispute_resolved(&env),),
+            shared_types::DisputeResolvedEvent {
+                delivery_id,
+                resolver: caller,
+            },
         );
     }
 
@@ -886,8 +908,11 @@ impl EscrowContract {
         save_escrow(&env, delivery_id, &record);
 
         env.events().publish(
-            (events::dispute_resolved(&env), delivery_id),
-            (caller.clone(), caller),
+            (events::dispute_resolved(&env),),
+            shared_types::DisputeResolvedEvent {
+                delivery_id,
+                resolver: caller,
+            },
         );
     }
 
