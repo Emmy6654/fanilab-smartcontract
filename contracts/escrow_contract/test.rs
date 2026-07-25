@@ -349,6 +349,7 @@ fn test_insufficient_funds_guard_on_release() {
 }
 
 #[test]
+fn test_create_escrow_with_invalid_token_rejected() {
 fn test_resolve_dispute_refund_with_insufficient_funds() {
     let (env, contract_id) = setup_env();
     let client = EscrowContractClient::new(&env, &contract_id);
@@ -359,6 +360,16 @@ fn test_resolve_dispute_refund_with_insufficient_funds() {
     let driver = Address::generate(&env);
     let token_admin = Address::generate(&env);
     let token = setup_token(&env, &token_admin);
+    let other_token_admin = Address::generate(&env);
+    let other_token = setup_token(&env, &other_token_admin);
+
+    client.init(&admin, &token, &0);
+    mint(&env, &token, &sender, 500);
+
+    let result = client.try_create_escrow(&sender, &recipient, &driver, &42u64, &other_token, &500);
+    match result {
+        Err(Ok(err)) => assert_eq!(err, EscrowError::InvalidToken.into()),
+        _ => panic!("Expected EscrowError::InvalidToken"),
 
     client.init(&admin, &token, &0);
     mint(&env, &token, &sender, 200);
