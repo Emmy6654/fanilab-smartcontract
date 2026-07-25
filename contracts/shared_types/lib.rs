@@ -26,6 +26,8 @@ pub enum FaniLabError {
     ProviderNotFound = 9,
     /// Address argument is invalid for the requested operation.
     InvalidAddress = 10,
+    /// Protocol is paused and fund movements are halted.
+    ProtocolPaused = 11,
 }
 
 // Event topic constants for on-chain event tracking
@@ -71,6 +73,11 @@ pub mod events {
     pub fn dispute_resolved(env: &Env) -> Symbol {
         Symbol::new(env, "dispute_resolved")
     }
+}
+
+pub mod ttl {
+    pub const LEDGER_TTL_THRESHOLD: u32 = 518400;
+    pub const LEDGER_TTL_EXTEND_TO: u32 = 1036800;
 }
 
 #[contracttype]
@@ -219,9 +226,11 @@ pub struct DeliveryRecord {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum EscrowState {
     Locked,
+    Holdback,
     Released,
     Refunded,
     Paused,
+    Split,
 }
 
 pub type EscrowStatus = EscrowState;
@@ -240,6 +249,7 @@ pub struct ProtocolConfig {
     pub token: Address,
     pub platform_fee_bps: u32,
     pub protocol_version: u32,
+    pub slippage_tolerance_bps: u32,
 }
 
 #[contracttype]
@@ -275,8 +285,10 @@ pub struct EscrowRecord {
     pub amount: i128,
     pub status: EscrowState,
     pub created_at: u64,
+    pub expires_at: Option<u64>,
     pub disputed_by: Option<Address>,
     pub disputed_at: Option<u64>,
+    pub fleet_id: Option<u64>,
 }
 
 #[contracttype]
@@ -318,6 +330,7 @@ mod test {
         assert_eq!(EscrowState::Released, EscrowState::Released);
         assert_eq!(EscrowState::Refunded, EscrowState::Refunded);
         assert_eq!(EscrowState::Paused, EscrowState::Paused);
+        assert_eq!(EscrowState::Split, EscrowState::Split);
     }
 
     #[test]
