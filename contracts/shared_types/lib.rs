@@ -242,6 +242,7 @@ pub struct ProtocolConfig {
     pub token: Address,
     pub platform_fee_bps: u32,
     pub protocol_version: u32,
+    pub slippage_tolerance_bps: u32,
 }
 
 #[contracttype]
@@ -277,6 +278,7 @@ pub struct EscrowRecord {
     pub amount: i128,
     pub status: EscrowState,
     pub created_at: u64,
+    pub expires_at: Option<u64>,
     pub disputed_by: Option<Address>,
     pub disputed_at: Option<u64>,
     pub fleet_id: Option<u64>,
