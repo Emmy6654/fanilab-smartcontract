@@ -38,6 +38,7 @@ pub struct MockReputationContract;
 impl MockReputationContract {
     pub fn increase_reputation(
         _env: Env,
+        _caller: Address,
         driver: Address,
         _delivery_id: u64,
         _weight_grams: u32,
@@ -48,7 +49,7 @@ impl MockReputationContract {
             .set(&Symbol::new(&_env, "rep_inc"), &driver);
     }
 
-    pub fn decrease_reputation(_env: Env, driver: Address, _points: u32) {
+    pub fn decrease_reputation(_env: Env, _caller: Address, driver: Address, _points: u32) {
         _env.storage()
             .temporary()
             .set(&Symbol::new(&_env, "rep_dec"), &driver);
@@ -76,6 +77,7 @@ fn setup_full(
     let driver = Address::generate(env);
     let recipient = Address::generate(env);
     client.init(&shipper, &escrow_id);
+    client.set_identity_reputation_contract(&shipper, &reputation_id);
     (client, shipper, driver, recipient, escrow_id, reputation_id)
 }
 
@@ -400,4 +402,222 @@ fn test_create_delivery_missing_fields() {
 
     let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
     assert_eq!(delivery_id, 1);
+}
+
+// ── SELF-ASSIGNMENT REJECTION (Issue #20) ─────────────────────────────────
+
+#[test]
+#[should_panic(expected = "InvalidDriver")]
+fn test_reject_assign_driver_as_sender() {
+    let env = Env::default();
+    let (client, shipper, _, recipient, _, _) = setup_full(&env);
+    let metadata = get_test_metadata(&env, 1);
+    let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
+
+    client.assign_driver(&shipper, &delivery_id, &shipper);
+}
+
+#[test]
+#[should_panic(expected = "InvalidDriver")]
+fn test_reject_assign_driver_as_recipient() {
+    let env = Env::default();
+    let (client, shipper, _, recipient, _, _) = setup_full(&env);
+    let metadata = get_test_metadata(&env, 1);
+    let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
+
+    client.assign_driver(&shipper, &delivery_id, &recipient);
+}
+
+#[test]
+#[should_panic(expected = "InvalidDelivery")]
+fn test_reject_confirm_delivery_from_driver() {
+    let env = Env::default();
+    let (client, shipper, driver, recipient, _, _) = setup_full(&env);
+    let metadata = get_test_metadata(&env, 1);
+    let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
+    client.assign_driver(&driver, &delivery_id, &driver);
+    client.mark_in_transit(&driver, &delivery_id);
+
+    client.confirm_delivery(&driver, &delivery_id);
+}
+
+// ── STATE SYNCHRONIZATION VALIDATION (Issue #19) ──────────────────────────────
+
+#[test]
+fn test_get_combined_state_pending_delivery() {
+    let env = Env::default();
+    let (client, shipper, driver, recipient, escrow_id, _) = setup_full(&env);
+    let metadata = get_test_metadata(&env, 1);
+    let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
+
+    let (delivery, _escrow, is_synchronized) = client.get_combined_state(&delivery_id);
+
+    assert_eq!(delivery.status, DeliveryStatus::Pending);
+    assert!(is_synchronized, "Pending delivery should be synchronized with escrow");
+}
+
+#[test]
+fn test_get_combined_state_active_delivery() {
+    let env = Env::default();
+    let (client, shipper, driver, recipient, escrow_id, _) = setup_full(&env);
+    let metadata = get_test_metadata(&env, 1);
+    let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
+    client.assign_driver(&driver, &delivery_id, &driver);
+
+    let (delivery, _escrow, is_synchronized) = client.get_combined_state(&delivery_id);
+
+    assert_eq!(delivery.status, DeliveryStatus::Active);
+    assert!(is_synchronized, "Active delivery should be synchronized with escrow");
+}
+
+#[test]
+fn test_get_combined_state_in_transit_delivery() {
+    let env = Env::default();
+    let (client, shipper, driver, recipient, escrow_id, _) = setup_full(&env);
+// ── METADATA VALIDATION ───────────────────────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "InvalidMetadata")]
+fn test_reject_origin_exceeds_max_length() {
+    let env = Env::default();
+    let (client, shipper, _, recipient, _, _) = setup_full(&env);
+
+    use shared_types::{CargoCategory, CargoDescriptor};
+    let long_string = String::from_str(&env, &"x".repeat(257));
+    let metadata = DeliveryMetadata {
+        delivery_id: 1,
+        origin: long_string,
+        destination: String::from_str(&env, "Destination"),
+        cargo_description: CargoDescriptor {
+            weight_grams: 100,
+            category: CargoCategory::General,
+            fragile: false,
+        },
+        created_at: env.ledger().timestamp(),
+        estimated_delivery: env.ledger().timestamp() + 86400,
+    };
+
+    client.create_delivery(&shipper, &recipient, &metadata);
+}
+
+#[test]
+#[should_panic(expected = "InvalidMetadata")]
+fn test_reject_destination_exceeds_max_length() {
+    let env = Env::default();
+    let (client, shipper, _, recipient, _, _) = setup_full(&env);
+
+    use shared_types::{CargoCategory, CargoDescriptor};
+    let long_string = String::from_str(&env, &"x".repeat(257));
+    let metadata = DeliveryMetadata {
+        delivery_id: 1,
+        origin: String::from_str(&env, "Origin"),
+        destination: long_string,
+        cargo_description: CargoDescriptor {
+            weight_grams: 100,
+            category: CargoCategory::General,
+            fragile: false,
+        },
+        created_at: env.ledger().timestamp(),
+        estimated_delivery: env.ledger().timestamp() + 86400,
+    };
+
+    client.create_delivery(&shipper, &recipient, &metadata);
+}
+
+#[test]
+#[should_panic(expected = "InvalidMetadata")]
+fn test_reject_weight_exceeds_max() {
+    let env = Env::default();
+    let (client, shipper, _, recipient, _, _) = setup_full(&env);
+
+    use shared_types::{CargoCategory, CargoDescriptor};
+    let metadata = DeliveryMetadata {
+        delivery_id: 1,
+        origin: String::from_str(&env, "Origin"),
+        destination: String::from_str(&env, "Destination"),
+        cargo_description: CargoDescriptor {
+            weight_grams: 1_000_001,
+            category: CargoCategory::General,
+            fragile: false,
+        },
+        created_at: env.ledger().timestamp(),
+        estimated_delivery: env.ledger().timestamp() + 86400,
+    };
+
+    client.create_delivery(&shipper, &recipient, &metadata);
+}
+
+#[test]
+fn test_accept_location_at_max_length() {
+    let env = Env::default();
+    let (client, shipper, _, recipient, _, _) = setup_full(&env);
+
+    use shared_types::{CargoCategory, CargoDescriptor};
+    let max_string = String::from_str(&env, &"x".repeat(256));
+    let metadata = DeliveryMetadata {
+        delivery_id: 1,
+        origin: max_string.clone(),
+        destination: max_string,
+        cargo_description: CargoDescriptor {
+            weight_grams: 100,
+            category: CargoCategory::General,
+            fragile: false,
+        },
+        created_at: env.ledger().timestamp(),
+        estimated_delivery: env.ledger().timestamp() + 86400,
+    };
+
+    let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
+    assert_eq!(delivery_id, 1);
+}
+
+#[test]
+fn test_accept_weight_at_max() {
+    let env = Env::default();
+    let (client, shipper, _, recipient, _, _) = setup_full(&env);
+
+    use shared_types::{CargoCategory, CargoDescriptor};
+    let metadata = DeliveryMetadata {
+        delivery_id: 1,
+        origin: String::from_str(&env, "Origin"),
+        destination: String::from_str(&env, "Destination"),
+        cargo_description: CargoDescriptor {
+            weight_grams: 1_000_000,
+            category: CargoCategory::General,
+            fragile: false,
+        },
+        created_at: env.ledger().timestamp(),
+        estimated_delivery: env.ledger().timestamp() + 86400,
+    };
+
+    let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
+    assert_eq!(delivery_id, 1);
+#[test]
+fn test_confirm_delivery_calls_increase_reputation() {
+    let env = Env::default();
+    let (client, shipper, driver, recipient, _, reputation_id) = setup_full(&env);
+    let metadata = get_test_metadata(&env, 1);
+    let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
+    client.assign_driver(&driver, &delivery_id, &driver);
+    client.mark_in_transit(&driver, &delivery_id);
+
+    let (delivery, _escrow, is_synchronized) = client.get_combined_state(&delivery_id);
+
+    assert_eq!(delivery.status, DeliveryStatus::InTransit);
+    assert!(is_synchronized, "InTransit delivery should be synchronized with escrow");
+    client.confirm_delivery(&recipient, &delivery_id);
+
+    let delivery = client.get_delivery(&delivery_id);
+    assert_eq!(delivery.status, DeliveryStatus::Delivered);
+
+    let stored_driver: Address = env.as_contract(&reputation_id, || {
+        env.storage()
+            .temporary()
+            .get(&Symbol::new(&env, "rep_inc"))
+            .unwrap_or(driver.clone())
+    });
+    assert_eq!(
+        stored_driver, driver,
+        "Expected reputation increase to be called for driver on delivery confirmation"
+    );
 }

@@ -15,8 +15,21 @@ use soroban_sdk::{
 pub enum DataKey {
     DeliveryCounter,
     EscrowContract,
+    IdentityReputationContract,
 }
 
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum DeliveryError {
+    InvalidState = 1,
+    InvalidMetadata = 2,
+}
+
+mod constants {
+    pub const MAX_LOCATION_LEN: u32 = 256;
+    pub const MAX_WEIGHT_GRAMS: u32 = 1_000_000;
+}
 
 /// Validate whether a status transition is permitted by the delivery state machine.
 ///
@@ -46,6 +59,19 @@ pub fn validate_transition(from: DeliveryStatus, to: DeliveryStatus) -> Result<(
     }
 }
 
+fn validate_delivery_metadata(env: &Env, metadata: &DeliveryMetadata) -> Result<(), DeliveryError> {
+    if metadata.origin.len() > constants::MAX_LOCATION_LEN {
+        return Err(DeliveryError::InvalidMetadata);
+    }
+    if metadata.destination.len() > constants::MAX_LOCATION_LEN {
+        return Err(DeliveryError::InvalidMetadata);
+    }
+    if metadata.cargo_description.weight_grams > constants::MAX_WEIGHT_GRAMS {
+        return Err(DeliveryError::InvalidMetadata);
+    }
+    Ok(())
+}
+
 #[contract]
 pub struct DeliveryContract;
 
@@ -69,6 +95,31 @@ impl DeliveryContract {
         );
     }
 
+    pub fn set_identity_reputation_contract(
+        env: Env,
+        admin: Address,
+        identity_contract: Address,
+    ) {
+        admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&StorageKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::NotInitialized));
+        if admin != stored_admin {
+            panic_with_error!(&env, FaniLabError::Unauthorized);
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::IdentityReputationContract, &identity_contract);
+    }
+
+    pub fn get_identity_reputation_contract(env: Env) -> Option<Address> {
+        env.storage()
+            .instance()
+            .get(&DataKey::IdentityReputationContract)
+    }
+
     pub fn create_delivery(
         env: Env,
         sender: Address,
@@ -76,6 +127,9 @@ impl DeliveryContract {
         metadata: DeliveryMetadata,
     ) -> DeliveryId {
         sender.require_auth();
+
+        validate_delivery_metadata(&env, &metadata)
+            .unwrap_or_else(|_| panic_with_error!(&env, DeliveryError::InvalidMetadata));
 
         let mut counter: u64 = env
             .storage()
@@ -174,6 +228,10 @@ impl DeliveryContract {
             .get(&key)
             .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::DeliveryNotFound));
 
+        if driver == delivery.sender || driver == delivery.recipient {
+            panic!("InvalidDriver");
+        }
+
         validate_transition(delivery.status.clone(), DeliveryStatus::Active)
             .unwrap_or_else(|_| panic_with_error!(&env, FaniLabError::InvalidState));
 
@@ -237,6 +295,12 @@ impl DeliveryContract {
             panic_with_error!(&env, FaniLabError::Unauthorized);
         }
 
+        if let Some(driver) = &delivery.driver {
+            if driver == &recipient || driver == &delivery.sender {
+                panic!("InvalidDelivery");
+            }
+        }
+
         validate_transition(delivery.status.clone(), DeliveryStatus::Delivered)
             .unwrap_or_else(|_| panic_with_error!(&env, FaniLabError::InvalidState));
 
@@ -249,7 +313,7 @@ impl DeliveryContract {
         use soroban_sdk::IntoVal;
         let _: () = env.invoke_contract(
             &escrow_address,
-            &soroban_sdk::Symbol::new(&env, "release_escrow"),
+            &soroban_sdk::Symbol::new(&env, "mark_holdback_escrow"),
             soroban_sdk::vec![
                 &env,
                 recipient.into_val(&env),
@@ -264,26 +328,21 @@ impl DeliveryContract {
         env.storage().persistent().extend_ttl(&key, 518400, 518400);
 
         if let Some(driver_addr) = &delivery.driver {
-            let driver_key = StorageKey::DriverProfile(driver_addr.clone());
-            let mut profile: DriverProfile = env
-                .storage()
-                .persistent()
-                .get(&driver_key)
-                .unwrap_or_else(|| DriverProfile {
-                    address: driver_addr.clone(),
-                    deliveries_completed: 0,
-                    reputation_score: 0,
-                    registered_at: env.ledger().timestamp(),
-                    kyc_verified: false,
-                });
-
-            profile.deliveries_completed += 1;
-            profile.reputation_score += 1;
-
-            env.storage().persistent().set(&driver_key, &profile);
-            env.storage()
-                .persistent()
-                .extend_ttl(&driver_key, 518400, 518400);
+            if let Some(identity_contract) = Self::get_identity_reputation_contract(env.clone()) {
+                let cargo_desc = &delivery.metadata.cargo_description;
+                let _: () = env.invoke_contract(
+                    &identity_contract,
+                    &Symbol::new(&env, "increase_reputation"),
+                    soroban_sdk::vec![
+                        &env,
+                        env.current_contract_address().into_val(&env),
+                        driver_addr.into_val(&env),
+                        u64::from(delivery_id).into_val(&env),
+                        cargo_desc.weight_grams.into_val(&env),
+                        cargo_desc.fragile.into_val(&env),
+                    ],
+                );
+            }
         }
 
         env.events().publish(
@@ -377,6 +436,59 @@ impl DeliveryContract {
             .persistent()
             .get(&key)
             .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::DeliveryNotFound))
+    }
+
+    /// Returns combined delivery and escrow state, and flags known-invalid combinations.
+    /// Validates that delivery and escrow states are synchronized according to protocol invariants.
+    pub fn get_combined_state(
+        env: Env,
+        delivery_id: DeliveryId,
+    ) -> (DeliveryRecord, shared_types::EscrowRecord, bool) {
+        let delivery = Self::get_delivery(env.clone(), delivery_id);
+
+        let escrow_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::EscrowContract)
+            .unwrap_or_else(|| panic!("EscrowNotConfigured"));
+
+        use soroban_sdk::IntoVal;
+        let escrow: shared_types::EscrowRecord = env.invoke_contract(
+            &escrow_address,
+            &Symbol::new(&env, "get_escrow"),
+            soroban_sdk::vec![&env, u64::from(delivery_id).into_val(&env)],
+        );
+
+        let is_synchronized = Self::validate_state_sync(&delivery, &escrow);
+        (delivery, escrow, is_synchronized)
+    }
+
+    /// Validates that delivery and escrow states match expected protocol invariants.
+    /// Returns true if states are synchronized, false if a mismatch is detected.
+    fn validate_state_sync(
+        delivery: &DeliveryRecord,
+        escrow: &shared_types::EscrowRecord,
+    ) -> bool {
+        match (&delivery.status, &escrow.status) {
+            // Pending/Active: escrow should be Locked
+            (DeliveryStatus::Pending, shared_types::EscrowStatus::Locked) => true,
+            (DeliveryStatus::Active, shared_types::EscrowStatus::Locked) => true,
+
+            // InTransit: escrow should still be Locked
+            (DeliveryStatus::InTransit, shared_types::EscrowStatus::Locked) => true,
+
+            // Delivered: escrow must be Released (funds moved to driver)
+            (DeliveryStatus::Delivered, shared_types::EscrowStatus::Released) => true,
+
+            // Disputed: escrow must be Paused
+            (DeliveryStatus::Disputed, shared_types::EscrowStatus::Paused) => true,
+
+            // Cancelled: escrow should be Refunded
+            (DeliveryStatus::Cancelled, shared_types::EscrowStatus::Refunded) => true,
+
+            // Any other combination is a mismatch
+            _ => false,
+        }
     }
 }
 
