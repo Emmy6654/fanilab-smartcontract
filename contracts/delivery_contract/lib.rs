@@ -39,7 +39,7 @@ mod constants {
 ///   InTransit → Delivered, Disputed
 ///   Disputed  → Delivered, Cancelled
 ///   Delivered, Cancelled → (terminal, no transitions)
-pub fn validate_transition(from: DeliveryStatus, to: DeliveryStatus) -> Result<(), DeliveryError> {
+pub fn validate_transition(from: DeliveryStatus, to: DeliveryStatus) -> Result<(), FaniLabError> {
     let valid = match (from, to) {
         (DeliveryStatus::Pending, DeliveryStatus::Active) => true,
         (DeliveryStatus::Pending, DeliveryStatus::Cancelled) => true,
@@ -55,7 +55,7 @@ pub fn validate_transition(from: DeliveryStatus, to: DeliveryStatus) -> Result<(
     if valid {
         Ok(())
     } else {
-        Err(DeliveryError::InvalidState)
+        Err(FaniLabError::InvalidState)
     }
 }
 
@@ -175,20 +175,20 @@ impl DeliveryContract {
             .storage()
             .persistent()
             .get(&key)
-            .unwrap_or_else(|| panic!("DeliveryNotFound"));
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::DeliveryNotFound));
 
         if delivery.sender != sender {
-            panic!("NotAuthorized");
+            panic_with_error!(&env, FaniLabError::Unauthorized);
         }
 
         validate_transition(delivery.status.clone(), DeliveryStatus::Cancelled)
-            .unwrap_or_else(|_| panic!("InvalidState"));
+            .unwrap_or_else(|_| panic_with_error!(&env, FaniLabError::InvalidState));
 
         let escrow_address: Address = env
             .storage()
             .instance()
             .get(&DataKey::EscrowContract)
-            .unwrap_or_else(|| panic!("EscrowNotConfigured"));
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::NotInitialized));
 
         use soroban_sdk::IntoVal;
         let _: () = env.invoke_contract(
@@ -218,7 +218,7 @@ impl DeliveryContract {
         let is_self_assignment = caller == driver;
 
         if !is_admin && !is_self_assignment {
-            panic!("NotAuthorized");
+            panic_with_error!(&env, FaniLabError::Unauthorized);
         }
 
         let key = delivery_key(delivery_id);
@@ -226,14 +226,14 @@ impl DeliveryContract {
             .storage()
             .persistent()
             .get(&key)
-            .unwrap_or_else(|| panic!("DeliveryNotFound"));
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::DeliveryNotFound));
 
         if driver == delivery.sender || driver == delivery.recipient {
             panic!("InvalidDriver");
         }
 
         validate_transition(delivery.status.clone(), DeliveryStatus::Active)
-            .unwrap_or_else(|_| panic!("InvalidState"));
+            .unwrap_or_else(|_| panic_with_error!(&env, FaniLabError::InvalidState));
 
         delivery.driver = Some(driver.clone());
         delivery.status = DeliveryStatus::Active;
@@ -257,16 +257,16 @@ impl DeliveryContract {
             .storage()
             .persistent()
             .get(&key)
-            .unwrap_or_else(|| panic!("DeliveryNotFound"));
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::DeliveryNotFound));
 
         // Verify caller is the assigned driver for this delivery
         match &delivery.driver {
             Some(assigned) if *assigned == driver => {}
-            _ => panic!("NotAuthorized"),
+            _ => panic_with_error!(&env, FaniLabError::Unauthorized),
         }
 
         validate_transition(delivery.status.clone(), DeliveryStatus::InTransit)
-            .unwrap_or_else(|_| panic!("InvalidState"));
+            .unwrap_or_else(|_| panic_with_error!(&env, FaniLabError::InvalidState));
 
         let timestamp = env.ledger().timestamp();
         delivery.status = DeliveryStatus::InTransit;
@@ -289,10 +289,10 @@ impl DeliveryContract {
             .storage()
             .persistent()
             .get(&key)
-            .unwrap_or_else(|| panic!("DeliveryNotFound"));
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::DeliveryNotFound));
 
         if recipient != delivery.recipient {
-            panic!("NotAuthorized");
+            panic_with_error!(&env, FaniLabError::Unauthorized);
         }
 
         if let Some(driver) = &delivery.driver {
@@ -302,13 +302,13 @@ impl DeliveryContract {
         }
 
         validate_transition(delivery.status.clone(), DeliveryStatus::Delivered)
-            .unwrap_or_else(|_| panic!("InvalidState"));
+            .unwrap_or_else(|_| panic_with_error!(&env, FaniLabError::InvalidState));
 
         let escrow_address: Address = env
             .storage()
             .instance()
             .get(&DataKey::EscrowContract)
-            .unwrap_or_else(|| panic!("EscrowNotConfigured"));
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::NotInitialized));
 
         use soroban_sdk::IntoVal;
         let _: () = env.invoke_contract(
@@ -362,22 +362,22 @@ impl DeliveryContract {
             .storage()
             .persistent()
             .get(&key)
-            .unwrap_or_else(|| panic!("DeliveryNotFound"));
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::DeliveryNotFound));
 
         let is_sender = caller == delivery.sender;
         let is_recipient = caller == delivery.recipient;
         if !is_sender && !is_recipient {
-            panic!("NotAuthorized");
+            panic_with_error!(&env, FaniLabError::Unauthorized);
         }
 
         validate_transition(delivery.status.clone(), DeliveryStatus::Disputed)
-            .unwrap_or_else(|_| panic!("InvalidState"));
+            .unwrap_or_else(|_| panic_with_error!(&env, FaniLabError::InvalidState));
 
         let escrow_address: Address = env
             .storage()
             .instance()
             .get(&DataKey::EscrowContract)
-            .unwrap_or_else(|| panic!("EscrowNotConfigured"));
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::NotInitialized));
 
         // Cross-contract call first: if escrow raises dispute fails, delivery
         // state is not mutated (implicit rollback via propagated panic).
@@ -435,7 +435,7 @@ impl DeliveryContract {
         env.storage()
             .persistent()
             .get(&key)
-            .unwrap_or_else(|| panic!("DeliveryNotFound"))
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::DeliveryNotFound))
     }
 
     /// Returns combined delivery and escrow state, and flags known-invalid combinations.
