@@ -6,22 +6,14 @@ use shared_types::{
     ReputationIncreasedEvent, UserRegisteredEvent, FaniLabError,
 };
 use soroban_sdk::{contract, contractimpl, contracttype, panic_with_error, Address, Env};
+use shared_types::{DriverProfile, FaniLabError};
+use soroban_sdk::{contract, contractimpl, contracttype, panic_with_error, Address, Env, Symbol};
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct UserProfile {
     pub address: Address,
     pub join_date: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct DriverProfile {
-    pub address: Address,
-    pub deliveries_completed: u32,
-    pub reputation_score: u32,
-    pub registered_at: u64,
-    pub kyc_verified: bool,
 }
 
 #[contracttype]
@@ -51,14 +43,7 @@ pub struct IdentityReputationContract;
 
 #[contractimpl]
 impl IdentityReputationContract {
-    pub fn init(env: Env, admin: Address) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic_with_error!(&env, FaniLabError::AlreadyInitialized);
-        }
-        env.storage().instance().set(&DataKey::Admin, &admin);
-    }
-
-    pub fn initialize(
+    pub fn init(
         env: Env,
         admin: Address,
         delivery_contract: Address,
@@ -106,6 +91,11 @@ impl IdentityReputationContract {
     pub fn is_authorized_contract(env: Env, contract_addr: Address) -> bool {
         let key = DataKey::AuthorizedContract(contract_addr);
         env.storage().persistent().get(&key).unwrap_or(false)
+    }
+
+    pub fn has_driver_profile(env: Env, driver: Address) -> bool {
+        let key = DataKey::DriverProfile(driver);
+        env.storage().persistent().get::<_, DriverProfile>(&key).is_some()
     }
 
     pub fn register_driver(env: Env, driver: Address) {
