@@ -410,3 +410,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-580 -->
 - #580: Identity: Emit Dedicated Event on update_driver_kyc_status Mutation
+
+<!-- handsoff-issue-581 -->
+- #581: Identity: Validate Reputation Score Range Bounds in set_reputation_config
