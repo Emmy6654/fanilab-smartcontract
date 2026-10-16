@@ -407,3 +407,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-575 -->
 - #575: Fleet: Add Roster Immutability Guard Verification in reactivate_fleet
+
+<!-- handsoff-issue-576 -->
+- #576: Fleet: Extend Storage TTL for Fleet Profile on Driver Addition
