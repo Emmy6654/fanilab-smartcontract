@@ -410,3 +410,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-552 -->
 - #552: Escrow: Prevent Premature Holdback Release in release_expired_holdback
+
+<!-- handsoff-issue-553 -->
+- #553: Escrow: Add Audit Event Emission for set_dispute_resolution_contract and set_identity_reputation_contract
