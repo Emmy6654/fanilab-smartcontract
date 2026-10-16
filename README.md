@@ -404,3 +404,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-562 -->
 - #562: Dispute: Handle None Driver Profile Safely in resolve_dispute_refund_sender
+
+<!-- handsoff-issue-563 -->
+- #563: Dispute: Move Duplicate Dispute Check to Start of raise_dispute Before Cross-Contract Invocations
