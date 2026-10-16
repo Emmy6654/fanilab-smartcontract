@@ -404,3 +404,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-546 -->
 - #546: Delivery: Enforce Cargo Weight and Volume Upper Limits in validate_delivery_metadata
+
+<!-- handsoff-issue-547 -->
+- #547: Delivery: Record Actual Completion Timestamp in DeliveryRecord on confirm_delivery
