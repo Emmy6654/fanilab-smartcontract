@@ -404,3 +404,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-582 -->
 - #582: Identity: Couple INITIAL_REPUTATION_SCORE Dynamically With SILVER_TIER_THRESHOLD
+
+<!-- handsoff-issue-583 -->
+- #583: Identity: Synchronize Enterprise Eligibility Logic With Dynamic Tier Config in is_eligible_for_enterprise
