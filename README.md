@@ -404,3 +404,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-574 -->
 - #574: Fleet: Validate DriverFleetStatus State Transition Invariants on Driver Suspension
+
+<!-- handsoff-issue-575 -->
+- #575: Fleet: Add Roster Immutability Guard Verification in reactivate_fleet
