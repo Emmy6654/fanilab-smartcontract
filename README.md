@@ -404,3 +404,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-550 -->
 - #550: Escrow: Validate Non-Zero Amount on Items in create_escrows_batch
+
+<!-- handsoff-issue-551 -->
+- #551: Escrow: Emit Observability Events for Admin Parameter Setters in EscrowContract
