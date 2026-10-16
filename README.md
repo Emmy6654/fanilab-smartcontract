@@ -404,3 +404,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-566 -->
 - #566: Dispute: Implement Appeal Grace Period for Contested Dispute Resolutions
+
+<!-- handsoff-issue-567 -->
+- #567: Dispute: Record Dispute Resolution Reason Code in DisputeCase Record
