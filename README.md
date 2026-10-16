@@ -407,3 +407,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-563 -->
 - #563: Dispute: Move Duplicate Dispute Check to Start of raise_dispute Before Cross-Contract Invocations
+
+<!-- handsoff-issue-564 -->
+- #564: Dispute: Prevent Duplicate Evidence Submission in add_evidence_hash
