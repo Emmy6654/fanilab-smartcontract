@@ -410,3 +410,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-548 -->
 - #548: Delivery: Add Delayed Status Handling and Event Emission for In-Transit Delays
+
+<!-- handsoff-issue-549 -->
+- #549: Delivery: Support External Reference ID in DeliveryMetadata Validation
