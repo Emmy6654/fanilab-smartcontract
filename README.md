@@ -401,3 +401,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-435 -->
 - #435: `fleet_management_contract` persistent storage mutation of `DataKey::FleetCounter` misses `extend_ttl`, permanently bricking fleet creation upon expiration
+
+<!-- handsoff-issue-545 -->
+- #545: Delivery: Extend Storage TTL on Delivery Index Updates in get_deliveries_page
