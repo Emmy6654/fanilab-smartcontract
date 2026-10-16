@@ -410,3 +410,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-572 -->
 - #572: Fleet: Validate Destination Address Non-Zero in admin_force_update_treasury
+
+<!-- handsoff-issue-573 -->
+- #573: Fleet: Paginate get_fleet_roster Query to Prevent Response Size Limit Errors
