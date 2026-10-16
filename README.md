@@ -410,3 +410,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-556 -->
 - #556: Escrow: Include Calculated Platform Fee Component in EscrowCreated Event
+
+<!-- handsoff-issue-557 -->
+- #557: Escrow: Enforce Minimum Escrow Amount Threshold to Prevent Dust Escrows
