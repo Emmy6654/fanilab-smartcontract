@@ -404,3 +404,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-542 -->
 - #542: Delivery: Enforce Reputation Threshold Check in assign_driver When Driver Profile Exists
+
+<!-- handsoff-issue-543 -->
+- #543: Delivery: Emit DeliveryReclaimed Event in reclaim_delivery_expired_escrow
