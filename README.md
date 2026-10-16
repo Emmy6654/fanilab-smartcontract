@@ -404,3 +404,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-554 -->
 - #554: Escrow: Extend Persistent Storage TTL Upon Escrow Refund in refund_escrow
+
+<!-- handsoff-issue-555 -->
+- #555: Escrow: Fix Hardcoded 100-Item Cap in get_escrows_by_recipient and get_escrows_by_driver
