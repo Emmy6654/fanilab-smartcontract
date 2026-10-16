@@ -407,3 +407,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-547 -->
 - #547: Delivery: Record Actual Completion Timestamp in DeliveryRecord on confirm_delivery
+
+<!-- handsoff-issue-548 -->
+- #548: Delivery: Add Delayed Status Handling and Event Emission for In-Transit Delays
