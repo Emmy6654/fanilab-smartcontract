@@ -407,3 +407,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-571 -->
 - #571: Fleet: Clean Up Orphaned Pending Treasury Timelocks on deactivate_fleet
+
+<!-- handsoff-issue-572 -->
+- #572: Fleet: Validate Destination Address Non-Zero in admin_force_update_treasury
