@@ -407,3 +407,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-559 -->
 - #559: Escrow: Distinguish Caller Authorization Error Codes in Escrow State Mutations
+
+<!-- handsoff-issue-560 -->
+- #560: Dispute: Dynamic Split Penalty in force_resolve_dispute Instead of Hardcoded Value
