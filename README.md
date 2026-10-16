@@ -410,3 +410,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-564 -->
 - #564: Dispute: Prevent Duplicate Evidence Submission in add_evidence_hash
+
+<!-- handsoff-issue-565 -->
+- #565: Dispute: Enforce Offset and Limit Bounds Check in get_disputes_page
