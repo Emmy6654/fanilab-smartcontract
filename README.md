@@ -407,3 +407,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-567 -->
 - #567: Dispute: Record Dispute Resolution Reason Code in DisputeCase Record
+
+<!-- handsoff-issue-568 -->
+- #568: Dispute: Extend Storage TTL on Evidence Entries in Dispute Resolution
