@@ -404,3 +404,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-524 -->
 - #524: `assign_driver` does not prevent suspended drivers from accepting deliveries
+
+<!-- handsoff-issue-537 -->
+- #537: Delivery: Fix Active-to-Active State Rejection in assign_driver Driver Reassignment
