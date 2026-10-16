@@ -407,3 +407,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-583 -->
 - #583: Identity: Synchronize Enterprise Eligibility Logic With Dynamic Tier Config in is_eligible_for_enterprise
+
+<!-- handsoff-issue-584 -->
+- #584: Identity: Add has_driver_profile Batch Lookup Helper in Identity Contract
