@@ -407,3 +407,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-543 -->
 - #543: Delivery: Emit DeliveryReclaimed Event in reclaim_delivery_expired_escrow
+
+<!-- handsoff-issue-544 -->
+- #544: Delivery: Validate Geographic Coordinates Format in validate_delivery_metadata
