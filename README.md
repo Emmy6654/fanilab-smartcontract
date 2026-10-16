@@ -407,3 +407,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-579 -->
 - #579: Identity: Add Floor Clamping in decrease_reputation to Prevent Underflow Panics
+
+<!-- handsoff-issue-580 -->
+- #580: Identity: Emit Dedicated Event on update_driver_kyc_status Mutation
