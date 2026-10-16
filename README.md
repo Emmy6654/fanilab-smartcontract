@@ -401,3 +401,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-435 -->
 - #435: `fleet_management_contract` persistent storage mutation of `DataKey::FleetCounter` misses `extend_ttl`, permanently bricking fleet creation upon expiration
+
+<!-- handsoff-issue-542 -->
+- #542: Delivery: Enforce Reputation Threshold Check in assign_driver When Driver Profile Exists
