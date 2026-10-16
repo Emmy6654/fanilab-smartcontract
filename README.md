@@ -404,3 +404,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-558 -->
 - #558: Escrow: Support Partial Escrow Release on Milestone Completion
+
+<!-- handsoff-issue-559 -->
+- #559: Escrow: Distinguish Caller Authorization Error Codes in Escrow State Mutations
