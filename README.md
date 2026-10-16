@@ -407,3 +407,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-551 -->
 - #551: Escrow: Emit Observability Events for Admin Parameter Setters in EscrowContract
+
+<!-- handsoff-issue-552 -->
+- #552: Escrow: Prevent Premature Holdback Release in release_expired_holdback
