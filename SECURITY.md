@@ -13,23 +13,32 @@
 
 ### How to Report
 
-Report vulnerabilities privately through GitHub's built-in private vulnerability
-reporting, which does not depend on any external mail server:
+Report vulnerabilities privately through one of the following channels. If
+GitHub's private vulnerability reporting is unavailable for this repository
+(the Security Advisories page may return 404), use the email channel below.
+
+**Option 1 — Email (always available):**
+
+Send your report to **security@fanilabs.io**. This mailbox is monitored by the
+maintainers and is the fallback channel when GitHub private reporting is not
+enabled. Encrypt sensitive reports with our PGP key if you have one; otherwise
+plain email is acceptable.
+
+**Option 2 — GitHub private vulnerability reporting (when enabled):**
 
 1. Open the [**Security Advisories**](https://github.com/fanilabs/fanilab-smartcontract/security/advisories/new) page for this repository.
 2. Click **Report a vulnerability**.
-3. Fill in the advisory form and **Include**:
-   - Detailed description of the vulnerability
-   - Steps to reproduce
-   - Potential impact
-   - Suggested fix (if any)
+3. Fill in the advisory form.
 
-This opens a private thread visible only to you and the maintainers; no special
-repository permissions are required to submit a report.
-
-If you cannot use GitHub's private reporting, open a public issue titled
+If neither channel is reachable, open a public issue titled
 `[SECURITY] Private contact request` that contains **no vulnerability details**
 and a maintainer will follow up with a private channel.
+
+### What to Include
+- Detailed description of the vulnerability
+- Steps to reproduce
+- Potential impact
+- Suggested fix (if any)
 
 ### Response Timeline
 - **Initial Response**: Within 48 hours
@@ -141,7 +150,8 @@ same thing:
 
 ## Security Contacts
 
-- **Private vulnerability reporting**: [GitHub Security Advisories](https://github.com/fanilabs/fanilab-smartcontract/security/advisories/new)
+- **Email (private)**: security@fanilabs.io
+- **Private vulnerability reporting**: [GitHub Security Advisories](https://github.com/fanilabs/fanilab-smartcontract/security/advisories/new) (when enabled)
 - **Discord**: FaniLab Official Server
 
 ## Additional Resources
