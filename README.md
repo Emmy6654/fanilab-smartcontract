@@ -410,3 +410,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-560 -->
 - #560: Dispute: Dynamic Split Penalty in force_resolve_dispute Instead of Hardcoded Value
+
+<!-- handsoff-issue-561 -->
+- #561: Dispute: Optimize get_disputes_page to Prevent Redundant Page Storage Reads in Iteration Loop
