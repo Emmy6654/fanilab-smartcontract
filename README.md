@@ -404,3 +404,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-578 -->
 - #578: Identity: Enforce Active Driver Status Check in increase_reputation and award_reputation
+
+<!-- handsoff-issue-579 -->
+- #579: Identity: Add Floor Clamping in decrease_reputation to Prevent Underflow Panics
