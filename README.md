@@ -407,3 +407,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-555 -->
 - #555: Escrow: Fix Hardcoded 100-Item Cap in get_escrows_by_recipient and get_escrows_by_driver
+
+<!-- handsoff-issue-556 -->
+- #556: Escrow: Include Calculated Platform Fee Component in EscrowCreated Event
