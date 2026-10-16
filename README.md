@@ -404,3 +404,6 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 
 <!-- handsoff-issue-570 -->
 - #570: Fleet: Replace O(N) Linear Scan in remove_driver_from_fleet With Reverse Index Mapping
+
+<!-- handsoff-issue-571 -->
+- #571: Fleet: Clean Up Orphaned Pending Treasury Timelocks on deactivate_fleet
