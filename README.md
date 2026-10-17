@@ -402,14 +402,14 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 <!-- handsoff-issue-435 -->
 - #435: `fleet_management_contract` persistent storage mutation of `DataKey::FleetCounter` misses `extend_ttl`, permanently bricking fleet creation upon expiration
 
-<!-- handsoff-issue-550 -->
-- #550: Escrow: Validate Non-Zero Amount on Items in create_escrows_batch
+<!-- handsoff-issue-566 -->
+- #566: Dispute: Implement Appeal Grace Period for Contested Dispute Resolutions
 
-<!-- handsoff-issue-551 -->
-- #551: Escrow: Emit Observability Events for Admin Parameter Setters in EscrowContract
+<!-- handsoff-issue-567 -->
+- #567: Dispute: Record Dispute Resolution Reason Code in DisputeCase Record
 
-<!-- handsoff-issue-552 -->
-- #552: Escrow: Prevent Premature Holdback Release in release_expired_holdback
+<!-- handsoff-issue-568 -->
+- #568: Dispute: Extend Storage TTL on Evidence Entries in Dispute Resolution
 
-<!-- handsoff-issue-553 -->
-- #553: Escrow: Add Audit Event Emission for set_dispute_resolution_contract and set_identity_reputation_contract
+<!-- handsoff-issue-569 -->
+- #569: Dispute: Restrict Dispute Creation on Already Delivered Deliveries Beyond Allowed Window
