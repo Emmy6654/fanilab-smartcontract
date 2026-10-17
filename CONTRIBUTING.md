@@ -1,156 +1,45 @@
-# Contributing to FaniLab-SmartContract
+# Contributing
 
-Thank you for your interest in contributing to **FaniLab-SmartContract**! We welcome contributions from the community to help build a trustless, Blockchain-Powered Logistics & Escrow Delivery Platform on the Stellar network. Whether you are fixing bugs, proposing new features, or optimizing gas usage, your help is incredibly valuable.
+Thanks for your interest in improving this project! We welcome contributions of all kinds — bug reports, feature requests, documentation improvements, and code changes.
 
-## Getting Started
+## Reporting Security Vulnerabilities
 
-1.  **Fork the repository** on GitHub.
-2.  **Clone your fork** locally:
-    ```bash
-    git clone https://github.com/your-username/FaniLab-SmartContract.git
-    cd FaniLab-SmartContract
-    ```
-3.  **Create a branch** for your feature or bug fix:
-    ```bash
-    git checkout -b feature/my-new-feature
-    ```
+**Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.**
 
-## Development Workflow
+If you believe you have found a security vulnerability, report it privately so we can investigate and address it before any public disclosure. GitHub private vulnerability reporting is not currently enabled on this repository, so please use the private contact channel below instead:
 
-The FaniLab Smart Contract repository is structured as a **Cargo Workspace**. This means multiple smart contracts live in the same repository and share dependencies. 
+- **Email:** security@example.com
 
-The workspace consists of seven crates located in the `contracts/` directory:
+When reporting, please include as much of the following as you can:
 
-*   **`shared_types/`**: The most critical crate. It acts as the common language between all contracts. It contains shared structs (e.g., `DeliveryDetails`), enums (e.g., `DeliveryStatus`), custom errors, and event definitions. *If a data structure needs to be passed between contracts, it MUST be defined here.*
-*   **`escrow_contract/`**: Handles the locking, releasing, and refunding of funds based on delivery states. Manages platform fees and settlement contract integration.
-*   **`delivery_contract/`**: Manages the logistics metadata, driver assignments, and delivery confirmation logic. Coordinates with `escrow_contract` for payment state changes.
-*   **`dispute_resolution_contract/`**: Manages dispute lifecycle — opening disputes, collecting evidence, and resolving outcomes (refund, pay driver, or split). Calls back into `escrow_contract` and `identity_reputation_contract` on resolution.
-*   **`fleet_management_contract/`**: Handles fleet registration, driver invite/acceptance flows, fleet treasury routing, and fleet membership lifecycle.
-*   **`identity_reputation_contract/`**: Maintains driver profiles, reputation scores, and tier classifications (Bronze/Silver/Gold). Called by other contracts to update or query driver standing.
-*   **`settlement_contract/`**: Provides a token-swap settlement path for cross-currency payouts. Integrated with `escrow_contract`'s release flow.
+- A description of the vulnerability and its potential impact.
+- Steps to reproduce or a proof-of-concept (if available).
+- The affected version, commit, or environment.
+- Any suggested remediation.
 
-### Prerequisites
+We will acknowledge your report as quickly as possible and keep you updated on our progress. Please give us a reasonable amount of time to investigate and release a fix before disclosing the issue publicly.
 
-You will need the following installed:
+## Reporting Bugs
 
-*   **Rust**: Latest stable toolchain. `https://www.rust-lang.org/tools/install`
-*   **WASM Target**: Required for compiling Soroban contracts.
-    ```bash
-    rustup target add wasm32v1-none
-    ```
-*   **Stellar CLI**: For compiling, deploying, and invoking contracts.
-    ```bash
-    cargo install --locked stellar-cli
-    ```
+For non-security bugs, please open a GitHub issue and include:
 
-### Building the Contracts
+- A clear and descriptive title.
+- Steps to reproduce the problem.
+- The expected behavior and what actually happened.
+- Your environment (OS, version, etc.).
 
-Because this is a Cargo workspace, you **do not** need to `cd` into individual contract directories to build them. You can manage everything from the root directory.
+## Suggesting Features
 
-**For Linux / macOS Users (using Make):**
-```bash
-# Build all contracts
-make build
+Feature requests are welcome. Open an issue describing the problem you are trying to solve and the behavior you would like to see.
 
-# Build specific contracts
-make build-escrow
-make build-delivery
-make build-dispute
-```
+## Submitting Changes
 
-**For Windows Users (or users without Make):**
-```bash
-# Build all contracts
-cargo build --target wasm32v1-none --release
+1. Fork the repository and create a branch from `main`.
+2. Make your changes, keeping them focused and scoped to a single concern.
+3. Follow the existing code style and conventions.
+4. Write clear commit messages describing what changed and why.
+5. Open a pull request and reference any related issues.
 
-# Build specific contracts
-cargo build -p escrow_contract --target wasm32v1-none --release
-cargo build -p delivery_contract --target wasm32v1-none --release
-cargo build -p dispute_resolution_contract --target wasm32v1-none --release
-```
+## Code of Conduct
 
-## Testing Guidelines
-
-Testing is a critical part of Soroban smart contract development.
-
-1. **Where to write tests:** Tests should be written in a `test.rs` file located directly inside the specific contract's directory (e.g., `contracts/escrow_contract/test.rs`).
-2. **Shared Types Testing:** Even though `shared_types` is not a smart contract, any helper functions, struct validation logic, or complex enum implementations added here *must* be accompanied by unit tests.
-3. **Running tests:** You can run all tests across the entire workspace from the root directory:
-
-**Using Make:**
-```bash
-make test
-```
-
-**Using Cargo (Windows/All):**
-```bash
-cargo test
-```
-
-*Note: Running `cargo test` generates `.json` ledger snapshot files (e.g., `test_init_and_get_status.1.json`). These are automatically ignored by our `.gitignore` and should **not** be committed.*
-
-## Feature Requests & Git Issues
-
-We believe the community should drive the project's priorities. 
-
-### Tackling Existing Issues
-When looking for something to work on, please check the GitHub Issues tab. We highly recommend starting with issues labeled `good first issue` or `help wanted` if you are new, as these are suitable for contributors getting familiar with the codebase.
-
-### Requesting a New Feature
-1.  **Check existing requests**: Browse existing Issues to see if someone has already suggested it.
-2.  **Open an Issue**: If your idea is new, open a GitHub Issue. Include:
-    *   A clear, descriptive title.
-    *   The problem or use case you're trying to solve in the logistics flow.
-    *   Your proposed solution or approach.
-
-## Submitting a Pull Request
-
-1.  **Ensure all tests pass**: Run `cargo test` from the root directory and ensure 100% of tests pass.
-2.  **Update documentation**: If you change the behavior of a contract, update the relevant markdown files in the `docs/` folder.
-3.  **Format your code**: Ensure your Rust code is properly formatted before committing.
-    ```bash
-    cargo fmt --all
-    ```
-4.  **Submit your PR** to the `main` branch. Provide a clear description of what your changes do, which issues they resolve, and any new cross-contract dependencies introduced.
-
-## Pinning GitHub Actions
-
-Every `uses:` entry in `.github/workflows/` **must be pinned to a full 40-character
-commit SHA**, with the human-readable version left as a trailing comment:
-
-```yaml
-uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-```
-
-Rationale: a mutable tag such as `@v1` or `@main` can be repointed to a different
-commit by the action's maintainer (or an attacker who compromises that account)
-at any time. The release workflow in particular runs a third-party action with a
-`GITHUB_TOKEN` that can write repository contents and publish the exact binaries
-users verify by checksum, so a floating tag there is an unacceptable
-supply-chain risk. Pinning by SHA freezes the code that actually runs.
-
-Rules:
-
-1. **All actions**, first-party (`actions/*`, `github/*`) and third-party alike,
-   are pinned by SHA. One policy, no exceptions, so a reviewer never has to
-   reason about which entries are "trusted enough" to float.
-2. The trailing `# vX.Y.Z` comment is **required**. It is what makes the pin
-   readable in review and is the version string Dependabot rewrites on bump.
-3. Pin to the SHA a released tag points at — not an arbitrary commit on `main`.
-   Get it with:
-   ```bash
-   gh api repos/<owner>/<repo>/tags --jq '.[] | "\(.name) \(.commit.sha)"'
-   ```
-4. Prefer the latest patch release within the major version already in use.
-   Bumping to a new **major** version is a deliberate change: do it in its own
-   commit and call out any behavior differences in the PR description.
-5. Keeping pins current is automated: `.github/dependabot.yml` runs the
-   `github-actions` ecosystem weekly and opens PRs that update both the SHA and
-   the version comment. Do not disable it.
-
-When you add or change a workflow, run a quick self-check that every `uses:`
-line has a 40-hex-character ref and a version comment before opening the PR.
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the **MIT License**, same as the project.
+Be respectful and constructive. We are committed to providing a welcoming and harassment-free experience for everyone.
