@@ -402,14 +402,14 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 <!-- handsoff-issue-435 -->
 - #435: `fleet_management_contract` persistent storage mutation of `DataKey::FleetCounter` misses `extend_ttl`, permanently bricking fleet creation upon expiration
 
-<!-- handsoff-issue-558 -->
-- #558: Escrow: Support Partial Escrow Release on Milestone Completion
+<!-- handsoff-issue-566 -->
+- #566: Dispute: Implement Appeal Grace Period for Contested Dispute Resolutions
 
-<!-- handsoff-issue-559 -->
-- #559: Escrow: Distinguish Caller Authorization Error Codes in Escrow State Mutations
+<!-- handsoff-issue-567 -->
+- #567: Dispute: Record Dispute Resolution Reason Code in DisputeCase Record
 
-<!-- handsoff-issue-560 -->
-- #560: Dispute: Dynamic Split Penalty in force_resolve_dispute Instead of Hardcoded Value
+<!-- handsoff-issue-568 -->
+- #568: Dispute: Extend Storage TTL on Evidence Entries in Dispute Resolution
 
-<!-- handsoff-issue-561 -->
-- #561: Dispute: Optimize get_disputes_page to Prevent Redundant Page Storage Reads in Iteration Loop
+<!-- handsoff-issue-569 -->
+- #569: Dispute: Restrict Dispute Creation on Already Delivered Deliveries Beyond Allowed Window
