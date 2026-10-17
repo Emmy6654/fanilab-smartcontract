@@ -6,6 +6,8 @@ labels: bug
 assignees: ''
 ---
 
+> **Security vulnerabilities:** Do NOT report security vulnerabilities in this public issue tracker. Please follow the private reporting process described in [SECURITY.md](../../SECURITY.md) instead.
+
 ## Bug Description
 <!-- A clear and concise description of what the bug is -->
 
