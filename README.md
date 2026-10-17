@@ -402,11 +402,14 @@ Built with ❤️ by the FaniLab Team | Powered by Stellar Soroban
 <!-- handsoff-issue-435 -->
 - #435: `fleet_management_contract` persistent storage mutation of `DataKey::FleetCounter` misses `extend_ttl`, permanently bricking fleet creation upon expiration
 
-<!-- handsoff-issue-542 -->
-- #542: Delivery: Enforce Reputation Threshold Check in assign_driver When Driver Profile Exists
+<!-- handsoff-issue-566 -->
+- #566: Dispute: Implement Appeal Grace Period for Contested Dispute Resolutions
 
-<!-- handsoff-issue-543 -->
-- #543: Delivery: Emit DeliveryReclaimed Event in reclaim_delivery_expired_escrow
+<!-- handsoff-issue-567 -->
+- #567: Dispute: Record Dispute Resolution Reason Code in DisputeCase Record
 
-<!-- handsoff-issue-544 -->
-- #544: Delivery: Validate Geographic Coordinates Format in validate_delivery_metadata
+<!-- handsoff-issue-568 -->
+- #568: Dispute: Extend Storage TTL on Evidence Entries in Dispute Resolution
+
+<!-- handsoff-issue-569 -->
+- #569: Dispute: Restrict Dispute Creation on Already Delivered Deliveries Beyond Allowed Window
