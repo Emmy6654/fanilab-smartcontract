@@ -278,7 +278,11 @@ impl IdentityReputationContract {
 
         env.events().publish(
             (events::driver_registered(&env),),
-            DriverRegisteredEvent { driver },
+            DriverRegisteredEvent {
+                driver,
+                kyc_verified: profile.kyc_verified,
+                starting_score: profile.reputation_score,
+            },
         );
     }
 
@@ -588,7 +592,7 @@ impl IdentityReputationContract {
             .get(&key)
             .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::ProviderNotFound));
 
-        if profile.status == DriverStatus::Active {
+        if profile.status != DriverStatus::Suspended {
             panic_with_error!(&env, FaniLabError::InvalidState);
         }
 

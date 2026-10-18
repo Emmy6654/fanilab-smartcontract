@@ -237,6 +237,18 @@ pub mod events {
         Symbol::new(env, "settlement_contract_updated")
     }
 
+    /// Emitted by `settlement_contract::set_driver_preference` so indexers
+    /// can track driver payout preference changes (Issue #589).
+    pub fn driver_preference_updated(env: &Env) -> Symbol {
+        Symbol::new(env, "driver_preference_updated")
+    }
+
+    /// Emitted by `settlement_contract::set_escrow_contract` so indexers can
+    /// track escrow contract address rotations (Issue #588).
+    pub fn escrow_contract_updated(env: &Env) -> Symbol {
+        Symbol::new(env, "escrow_contract_updated")
+    }
+
     pub fn admin_transferred(env: &Env) -> Symbol {
         Symbol::new(env, "admin_transferred")
     }
@@ -515,6 +527,10 @@ pub struct DisputeResolvedPayoutEvent {
 pub struct DriverRegisteredEvent {
     /// Driver address that was registered.
     pub driver: Address,
+    /// Initial KYC verification status at registration.
+    pub kyc_verified: bool,
+    /// Starting reputation score.
+    pub starting_score: u32,
 }
 
 #[contracttype]
@@ -533,6 +549,26 @@ pub struct DriverReinstatedEvent {
     pub driver: Address,
     /// Admin address that performed the reinstatement.
     pub admin: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DriverPreferenceUpdatedEvent {
+    /// Driver address whose preference was updated.
+    pub driver: Address,
+    /// New target token address for payouts.
+    pub target_token: Address,
+    /// Ledger timestamp of the update.
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowContractUpdatedEvent {
+    /// Admin address that performed the update.
+    pub admin: Address,
+    /// New escrow contract address.
+    pub new_escrow: Address,
 }
 
 #[contracttype]

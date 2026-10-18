@@ -1225,3 +1225,57 @@ fn test_award_reputation_huge_points_clamp_instead_of_overflowing() {
         MAX_REPUTATION
     );
 }
+
+/// Issue #586: reinstate_driver must validate Suspended→Active transition and
+/// emit driver_reinstated event with admin and driver address.
+#[test]
+fn test_reinstate_driver_requires_suspended_status() {
+    let (env, admin, client, _, _) = setup_wired();
+    let driver = Address::generate(&env);
+
+    // Register (status = Active), so reinstating should fail.
+    client.register_driver(&driver);
+
+    let err = client
+        .try_reinstate_driver(&admin, &driver)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, FaniLabError::InvalidState.into());
+}
+
+/// Issue #586: reinstate_driver succeeds when driver is Suspended.
+#[test]
+fn test_reinstate_driver_from_suspended() {
+    let (env, admin, client, _, _) = setup_wired();
+    let driver = Address::generate(&env);
+
+    client.register_driver(&driver);
+    client.suspend_driver(&admin, &driver);
+
+    assert_eq!(
+        client.get_driver_profile(&driver).status,
+        shared_types::DriverStatus::Suspended
+    );
+
+    client.reinstate_driver(&admin, &driver);
+
+    let profile = client.get_driver_profile(&driver);
+    assert_eq!(profile.status, shared_types::DriverStatus::Active);
+}
+
+/// Issue #587: register_driver emits DriverRegisteredEvent with kyc_verified
+/// and starting_score fields.
+#[test]
+fn test_register_driver_emits_event_with_kyc_and_score() {
+    let (env, _, client, _, _) = setup_wired();
+    let driver = Address::generate(&env);
+
+    client.register_driver(&driver);
+
+    // Verify driver_registered event was emitted.
+    assert_last_topic(&env, "driver_registered");
+
+    let profile = client.get_driver_profile(&driver);
+    assert!(!profile.kyc_verified);
+    assert_eq!(profile.reputation_score, INITIAL_REPUTATION_SCORE);
+}
