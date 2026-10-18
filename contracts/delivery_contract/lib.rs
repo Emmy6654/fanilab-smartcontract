@@ -252,6 +252,12 @@ impl DeliveryContract {
         env.storage()
             .instance()
             .extend_ttl(ttl::LEDGER_TTL_THRESHOLD, ttl::LEDGER_TTL_EXTEND_TO);
+
+        // Emit audit event so off-chain indexers can track mediator rotations
+        // (Issue #541).
+        let timestamp = env.ledger().timestamp();
+        env.events()
+            .publish((events::dispute_contract_updated(&env),), (admin, dispute_contract, timestamp));
     }
 
     pub fn get_dispute_resolution_contract(env: Env) -> Option<Address> {
@@ -279,6 +285,11 @@ impl DeliveryContract {
         env.storage()
             .instance()
             .extend_ttl(ttl::LEDGER_TTL_THRESHOLD, ttl::LEDGER_TTL_EXTEND_TO);
+
+        // Emit audit event so off-chain monitors can detect escrow rotations
+        // (Issue #540).
+        env.events()
+            .publish((events::delivery_contract_updated(&env),), (admin, escrow_contract));
     }
 
     pub fn get_identity_reputation_contract(env: Env) -> Option<Address> {
@@ -612,15 +623,35 @@ impl DeliveryContract {
             .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::NotInitialized));
 
         use soroban_sdk::IntoVal;
-        let _: () = env.invoke_contract(
+
+        // Check whether an escrow deposit exists for this delivery before
+        // attempting the refund cross-contract call (Issue #538). If no
+        // escrow was attached, skip the refund and transition directly to
+        // Cancelled with refund_amount = 0.
+        let mut refund_amount: i128 = 0;
+        let has_escrow: bool = env.invoke_contract(
             &escrow_address,
-            &soroban_sdk::Symbol::new(&env, "refund_escrow"),
-            soroban_sdk::vec![
-                &env,
-                sender.into_val(&env),
-                u64::from(delivery_id).into_val(&env),
-            ],
+            &soroban_sdk::Symbol::new(&env, "has_escrow"),
+            soroban_sdk::vec![&env, u64::from(delivery_id).into_val(&env)],
         );
+        if has_escrow {
+            let escrow: shared_types::EscrowRecord = env.invoke_contract(
+                &escrow_address,
+                &soroban_sdk::Symbol::new(&env, "get_escrow"),
+                soroban_sdk::vec![&env, u64::from(delivery_id).into_val(&env)],
+            );
+            refund_amount = escrow.amount;
+
+            let _: () = env.invoke_contract(
+                &escrow_address,
+                &soroban_sdk::Symbol::new(&env, "refund_escrow"),
+                soroban_sdk::vec![
+                    &env,
+                    sender.into_val(&env),
+                    u64::from(delivery_id).into_val(&env),
+                ],
+            );
+        }
 
         delivery.status = DeliveryStatus::Cancelled;
         env.storage().persistent().set(&key, &delivery);
@@ -631,7 +662,7 @@ impl DeliveryContract {
         );
 
         env.events()
-            .publish((events::delivery_cancelled(&env),), (delivery_id, sender));
+            .publish((events::delivery_cancelled(&env),), (delivery_id, sender, refund_amount));
     }
 
     /// Assign a driver and move the delivery `Pending -> Active`.
