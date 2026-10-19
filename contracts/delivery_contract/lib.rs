@@ -1128,6 +1128,15 @@ impl DeliveryContract {
     /// Validates that delivery and escrow states match expected protocol invariants.
     /// Returns true if states are synchronized, false if a mismatch is detected.
     fn validate_state_sync(delivery: &DeliveryRecord, escrow: &shared_types::EscrowRecord) -> bool {
+        if delivery.sender != escrow.sender || delivery.recipient != escrow.recipient {
+            return false;
+        }
+        if let Some(driver) = &delivery.driver {
+            if driver != &escrow.driver {
+                return false;
+            }
+        }
+
         match (&delivery.status, &escrow.status) {
             // Pending/Active: escrow should be Locked
             (DeliveryStatus::Pending, shared_types::EscrowStatus::Locked) => true,

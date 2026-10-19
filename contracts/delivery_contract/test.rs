@@ -122,6 +122,21 @@ impl MockEscrowContract {
             panic!("MockEscrowFailure");
         }
         let placeholder = Address::generate(&_env);
+        let sender = _env
+            .storage()
+            .temporary()
+            .get(&Symbol::new(&_env, "mock_sender"))
+            .unwrap_or_else(|| placeholder.clone());
+        let recipient = _env
+            .storage()
+            .temporary()
+            .get(&Symbol::new(&_env, "mock_recipient"))
+            .unwrap_or_else(|| placeholder.clone());
+        let driver = _env
+            .storage()
+            .temporary()
+            .get(&Symbol::new(&_env, "mock_driver"))
+            .unwrap_or_else(|| placeholder.clone());
         let status = if delivery_id == 8888 {
             shared_types::EscrowStatus::Refunded
         } else if _env
@@ -164,9 +179,9 @@ impl MockEscrowContract {
         };
         shared_types::EscrowRecord {
             delivery_id: 0,
-            sender: placeholder.clone(),
-            recipient: placeholder.clone(),
-            driver: placeholder,
+            sender,
+            recipient,
+            driver,
             token: Address::generate(&_env),
             amount: 0,
             status,
@@ -177,6 +192,18 @@ impl MockEscrowContract {
             holdback_started_at: None,
             fleet_id: None,
         }
+    }
+
+    pub fn set_parties(_env: Env, sender: Address, recipient: Address, driver: Address) {
+        _env.storage()
+            .temporary()
+            .set(&Symbol::new(&_env, "mock_sender"), &sender);
+        _env.storage()
+            .temporary()
+            .set(&Symbol::new(&_env, "mock_recipient"), &recipient);
+        _env.storage()
+            .temporary()
+            .set(&Symbol::new(&_env, "mock_driver"), &driver);
     }
 }
 
@@ -352,6 +379,25 @@ fn get_test_metadata(env: &Env, delivery_id: u64) -> DeliveryMetadata {
         created_at: env.ledger().timestamp(),
         estimated_delivery: env.ledger().timestamp() + 86400,
     }
+}
+
+fn set_mock_escrow_parties(
+    env: &Env,
+    escrow_id: &Address,
+    sender: &Address,
+    recipient: &Address,
+    driver: &Address,
+) {
+    let _: () = env.invoke_contract(
+        escrow_id,
+        &Symbol::new(env, "set_parties"),
+        soroban_sdk::vec![
+            env,
+            sender.into_val(env),
+            recipient.into_val(env),
+            driver.into_val(env)
+        ],
+    );
 }
 
 #[test]
@@ -1091,9 +1137,10 @@ fn test_confirm_delivery_rejects_driver_matching_recipient() {
 #[test]
 fn test_get_combined_state_pending_delivery() {
     let env = Env::default();
-    let (client, shipper, _driver, recipient, _escrow_id, _) = setup_full(&env);
+    let (client, shipper, driver, recipient, escrow_id, _) = setup_full(&env);
     let metadata = get_test_metadata(&env, 1);
     let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
+    set_mock_escrow_parties(&env, &escrow_id, &shipper, &recipient, &driver);
 
     let (delivery, _escrow, is_synchronized) = client.get_combined_state(&delivery_id);
 
@@ -1107,10 +1154,11 @@ fn test_get_combined_state_pending_delivery() {
 #[test]
 fn test_get_combined_state_active_delivery() {
     let env = Env::default();
-    let (client, shipper, driver, recipient, _escrow_id, _) = setup_full(&env);
+    let (client, shipper, driver, recipient, escrow_id, _) = setup_full(&env);
     let metadata = get_test_metadata(&env, 1);
     let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
     client.assign_driver(&driver, &delivery_id, &driver);
+    set_mock_escrow_parties(&env, &escrow_id, &shipper, &recipient, &driver);
 
     let (delivery, _escrow, is_synchronized) = client.get_combined_state(&delivery_id);
 
@@ -1124,11 +1172,12 @@ fn test_get_combined_state_active_delivery() {
 #[test]
 fn test_get_combined_state_in_transit_delivery() {
     let env = Env::default();
-    let (client, shipper, driver, recipient, _escrow_id, _) = setup_full(&env);
+    let (client, shipper, driver, recipient, escrow_id, _) = setup_full(&env);
     let metadata = get_test_metadata(&env, 1);
     let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
     client.assign_driver(&driver, &delivery_id, &driver);
     client.mark_in_transit(&driver, &delivery_id);
+    set_mock_escrow_parties(&env, &escrow_id, &shipper, &recipient, &driver);
 
     let (delivery, _escrow, is_synchronized) = client.get_combined_state(&delivery_id);
 
@@ -1171,6 +1220,41 @@ fn test_get_combined_state_no_escrow_returns_none_without_panic() {
         !is_synchronized,
         "An unfunded delivery is not synchronized with any escrow"
     );
+}
+
+#[test]
+fn test_get_combined_state_rejects_party_mismatches() {
+    let env = Env::default();
+    let (client, sender, driver, recipient, escrow_id, _) = setup_full(&env);
+    let delivery_id = client.create_delivery(&sender, &recipient, &get_test_metadata(&env, 1));
+
+    set_mock_escrow_parties(
+        &env,
+        &escrow_id,
+        &Address::generate(&env),
+        &recipient,
+        &driver,
+    );
+    assert!(!client.get_combined_state(&delivery_id).2);
+
+    set_mock_escrow_parties(
+        &env,
+        &escrow_id,
+        &sender,
+        &Address::generate(&env),
+        &driver,
+    );
+    assert!(!client.get_combined_state(&delivery_id).2);
+
+    client.assign_driver(&driver, &delivery_id, &driver);
+    set_mock_escrow_parties(
+        &env,
+        &escrow_id,
+        &sender,
+        &recipient,
+        &Address::generate(&env),
+    );
+    assert!(!client.get_combined_state(&delivery_id).2);
 }
 
 // ── METADATA VALIDATION (Issue #96 - empty origin/destination and zero weight) ───────────────────
@@ -2410,9 +2494,10 @@ fn test_index_contents_unchanged_after_delivery_cancellation() {
 #[test]
 fn test_reclaim_delivery_expired_escrow_from_pending_synchronises() {
     let env = Env::default();
-    let (client, _admin, _driver, recipient, _escrow_id, _) = setup_full(&env);
+    let (client, admin, driver, recipient, escrow_id, _) = setup_full(&env);
 
-    let did = client.create_delivery(&_admin, &recipient, &get_test_metadata(&env, 1));
+    let did = client.create_delivery(&admin, &recipient, &get_test_metadata(&env, 1));
+    set_mock_escrow_parties(&env, &escrow_id, &admin, &recipient, &driver);
 
     // Delivery starts Pending; reclaim transitions it to Cancelled.
     client.reclaim_delivery_expired_escrow(&did);
@@ -2430,11 +2515,12 @@ fn test_reclaim_delivery_expired_escrow_from_pending_synchronises() {
 #[test]
 fn test_reclaim_delivery_expired_escrow_from_active_synchronises() {
     let env = Env::default();
-    let (client, _admin, driver, recipient, _escrow_id, _) = setup_full(&env);
+    let (client, admin, driver, recipient, escrow_id, _) = setup_full(&env);
 
-    let did = client.create_delivery(&_admin, &recipient, &get_test_metadata(&env, 2));
+    let did = client.create_delivery(&admin, &recipient, &get_test_metadata(&env, 2));
     // Pending → Active via assign_driver
     client.assign_driver(&driver, &did, &driver);
+    set_mock_escrow_parties(&env, &escrow_id, &admin, &recipient, &driver);
     assert_eq!(client.get_delivery(&did).status, DeliveryStatus::Active);
 
     client.reclaim_delivery_expired_escrow(&did);
@@ -2451,11 +2537,12 @@ fn test_reclaim_delivery_expired_escrow_from_active_synchronises() {
 #[test]
 fn test_reclaim_delivery_expired_escrow_from_in_transit_synchronises() {
     let env = Env::default();
-    let (client, _admin, driver, recipient, _escrow_id, _) = setup_full(&env);
+    let (client, admin, driver, recipient, escrow_id, _) = setup_full(&env);
 
-    let did = client.create_delivery(&_admin, &recipient, &get_test_metadata(&env, 3));
+    let did = client.create_delivery(&admin, &recipient, &get_test_metadata(&env, 3));
     client.assign_driver(&driver, &did, &driver);
     client.mark_in_transit(&driver, &did);
+    set_mock_escrow_parties(&env, &escrow_id, &admin, &recipient, &driver);
     assert_eq!(client.get_delivery(&did).status, DeliveryStatus::InTransit);
 
     // Escrow reclaim succeeds and delivery is Cancelled.
