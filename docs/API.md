@@ -23,6 +23,7 @@ The protocol supports on-chain secondary indexes to enable efficient queries wit
 Secondary indexes are maintained alongside primary records in persistent storage for:
 - **Deliveries by Sender** — all delivery IDs initiated by a given sender
 - **Deliveries by Recipient** — all delivery IDs with a given recipient
+- **Deliveries by Driver** — all delivery IDs assigned to a given driver
 - **Escrows by Sender** — all escrow delivery IDs initiated by a given sender
 - **Escrows by Recipient** — all escrow delivery IDs for a given recipient
 - **Escrows by Driver** — all escrow delivery IDs assigned to a given driver
@@ -35,14 +36,29 @@ These indexes are automatically maintained by the respective contracts and are b
 **Delivery Contract:**
 - `get_deliveries_by_sender(sender: Address) -> Vec<DeliveryId>` — all deliveries by sender
 - `get_deliveries_by_recipient(recipient: Address) -> Vec<DeliveryId>` — all deliveries to recipient
+- `get_deliveries_by_driver(driver: Address) -> Vec<DeliveryId>` — all deliveries assigned to a driver
+- `get_deliveries_page(owner: Address, kind: u32, offset: u32, limit: u32) -> Vec<DeliveryId>` — a page from a delivery index
 
 **Escrow Contract:**
 - `get_escrows_by_sender(sender: Address) -> Vec<u64>` — all escrow delivery IDs by sender
 - `get_escrows_by_recipient(recipient: Address) -> Vec<u64>` — all escrow delivery IDs for recipient
 - `get_escrows_by_driver(driver: Address) -> Vec<u64>` — all escrow delivery IDs for driver
+- `get_escrows_page(owner: Address, kind: u32, offset: u32, limit: u32) -> Vec<u64>` — a page from an escrow index
 
 **Fleet Management Contract:**
 - `get_fleet_roster(fleet_id: FleetId, offset: u32, limit: u32) -> Vec<Address>` — a page of active drivers in a fleet (limit clamped to 100)
+
+### Pagination Guidelines
+
+Use `get_deliveries_page` and `get_escrows_page` to retrieve indexes larger
+than one page. Both accept a zero-based `offset` and a `limit` that is clamped
+to 100; request subsequent pages by increasing the offset by the number of
+records returned (for example, offsets 0, 100, 200 with a limit of 100).
+`kind` selects the index: `0` = sender, `1` = recipient, and `2` = driver.
+An unknown owner or offset beyond the end returns an empty vector. The
+non-paginated sender/recipient/driver getters are convenient for small indexes
+but return at most the first 100 records; use the page methods to enumerate
+larger indexes.
 
 ### Interim: Event-Replay Indexing
 
