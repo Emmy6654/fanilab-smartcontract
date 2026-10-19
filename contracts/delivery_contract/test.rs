@@ -1237,13 +1237,7 @@ fn test_get_combined_state_rejects_party_mismatches() {
     );
     assert!(!client.get_combined_state(&delivery_id).2);
 
-    set_mock_escrow_parties(
-        &env,
-        &escrow_id,
-        &sender,
-        &Address::generate(&env),
-        &driver,
-    );
+    set_mock_escrow_parties(&env, &escrow_id, &sender, &Address::generate(&env), &driver);
     assert!(!client.get_combined_state(&delivery_id).2);
 
     client.assign_driver(&sender, &delivery_id, &driver);
