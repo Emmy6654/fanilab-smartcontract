@@ -853,6 +853,7 @@ impl EscrowContract {
     }
 
     // Issue #90: allow an admin to unset a previously configured settlement_contract.
+    #[allow(deprecated)] // events().publish() is deprecated in SDK 28 but remains functional
     pub fn clear_settlement_contract(env: Env, admin: Address) {
         admin.require_auth();
         require_admin(&env, &admin);
@@ -863,6 +864,10 @@ impl EscrowContract {
             .instance()
             .remove(&DataKey::PendingSettlementContract);
         extend_instance_ttl(&env);
+        env.events().publish(
+            (Symbol::new(&env, "settlement_contract_cleared"),),
+            (admin, env.ledger().timestamp()),
+        );
     }
 
     pub fn set_fleet_management_contract(env: Env, admin: Address, fleet_contract: Address) {
@@ -894,6 +899,7 @@ impl EscrowContract {
     /// disable the protocol's ability to freeze a suspicious escrow. The
     /// intended remedy for a bad dispute contract is to repoint it with
     /// `set_dispute_resolution_contract`, not to remove the integration.
+    #[allow(deprecated)] // events().publish() is deprecated in SDK 28 but remains functional
     pub fn clear_fleet_management_contract(env: Env, admin: Address) {
         admin.require_auth();
         require_admin(&env, &admin);
@@ -901,6 +907,10 @@ impl EscrowContract {
             .instance()
             .remove(&DataKey::FleetManagementContract);
         extend_instance_ttl(&env);
+        env.events().publish(
+            (Symbol::new(&env, "fleet_management_contract_cleared"),),
+            (admin, env.ledger().timestamp()),
+        );
     }
 
     pub fn set_dispute_resolution_contract(env: Env, admin: Address, dispute_contract: Address) {

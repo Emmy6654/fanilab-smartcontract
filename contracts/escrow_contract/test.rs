@@ -1407,6 +1407,26 @@ fn test_clear_settlement_contract_reverts_to_none() {
 }
 
 #[test]
+fn test_clear_settlement_contract_emits_audit_event() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    client.init(&admin, &token, &0);
+    client.clear_settlement_contract(&admin);
+
+    let (topics, data) = last_event(&env);
+    let topic: Symbol = Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(topic, Symbol::new(&env, "settlement_contract_cleared"));
+    assert_eq!(
+        data,
+        (admin, env.ledger().timestamp()).into_val(&env)
+    );
+}
+
+#[test]
 fn test_clear_settlement_contract_also_cancels_pending_proposal() {
     let (env, contract_id) = setup_env();
     let client = EscrowContractClient::new(&env, &contract_id);
@@ -4736,6 +4756,26 @@ fn test_clear_fleet_management_contract_reverts_to_none() {
 
     client.clear_fleet_management_contract(&admin);
     assert_eq!(client.get_fleet_management_contract(), None);
+}
+
+#[test]
+fn test_clear_fleet_management_contract_emits_audit_event() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    client.init(&admin, &token, &0);
+    client.clear_fleet_management_contract(&admin);
+
+    let (topics, data) = last_event(&env);
+    let topic: Symbol = Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(topic, Symbol::new(&env, "fleet_management_contract_cleared"));
+    assert_eq!(
+        data,
+        (admin, env.ledger().timestamp()).into_val(&env)
+    );
 }
 
 #[test]
