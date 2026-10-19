@@ -1307,6 +1307,17 @@ fn test_reject_empty_destination() {
 
 #[test]
 #[should_panic(expected = "2")]
+fn test_reject_identical_origin_and_destination() {
+    let env = Env::default();
+    let (client, shipper, _, recipient, _, _) = setup_full(&env);
+    let mut metadata = get_test_metadata(&env, 1);
+    metadata.destination = metadata.origin.clone();
+
+    client.create_delivery(&shipper, &recipient, &metadata);
+}
+
+#[test]
+#[should_panic(expected = "2")]
 fn test_reject_zero_weight() {
     let env = Env::default();
     let (client, shipper, _, recipient, _, _) = setup_full(&env);
@@ -1428,11 +1439,12 @@ fn test_accept_location_at_max_length() {
     let (client, shipper, _, recipient, _, _) = setup_full(&env);
 
     use shared_types::{CargoCategory, CargoDescriptor};
-    let max_string = String::from_str(&env, &"x".repeat(256));
+    let origin = String::from_str(&env, &"x".repeat(256));
+    let destination = String::from_str(&env, &"y".repeat(256));
     let metadata = DeliveryMetadata {
         delivery_id: 1,
-        origin: max_string.clone(),
-        destination: max_string,
+        origin,
+        destination,
         cargo_description: CargoDescriptor {
             weight_grams: 100,
             category: CargoCategory::General,

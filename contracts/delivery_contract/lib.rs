@@ -178,6 +178,9 @@ fn validate_delivery_metadata(
     if metadata.destination.is_empty() || metadata.destination.len() > constants::MAX_LOCATION_LEN {
         return Err(DeliveryError::InvalidMetadata);
     }
+    if metadata.origin == metadata.destination {
+        return Err(DeliveryError::InvalidMetadata);
+    }
     if metadata.cargo_description.weight_grams == 0
         || metadata.cargo_description.weight_grams > constants::MAX_WEIGHT_GRAMS
     {
