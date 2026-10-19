@@ -994,7 +994,10 @@ impl FleetManagementContract {
     /// `co_signers` supplies any additional signer authorizations needed to
     /// satisfy the fleet's `signature_threshold` beyond `caller` alone — pass
     /// an empty vec for a threshold-1 fleet (the common case) or when the
-    /// driver is removing themselves (no signer threshold applies).
+    /// driver is removing themselves (no authorization threshold applies).
+    /// A self-removing driver is also removed from the signer set; this
+    /// operation is rejected if that would leave fewer signers than the
+    /// configured threshold.
     #[allow(deprecated)] // events().publish() is deprecated in SDK 27.0.0 but still functional; tracked in SOROBAN_SDK_27_MIGRATION.md#event-system-migration (Issue #114)
     pub fn remove_driver_from_fleet(
         env: Env,
@@ -1028,17 +1031,32 @@ impl FleetManagementContract {
             .get(&invite_key)
             .unwrap_or_else(|| panic_with_error!(&env, FleetError::InviteNotFound));
 
+        let mut profile_changed = false;
+        if is_driver && profile.signers.contains(&driver) {
+            let remaining_signer_count = profile.signers.len() - 1;
+            if remaining_signer_count < profile.signature_threshold {
+                panic_with_error!(&env, FleetError::InvalidConfiguration);
+            }
+
+            let mut remaining_signers = soroban_sdk::Vec::new(&env);
+            for signer in profile.signers.iter() {
+                if signer != driver {
+                    remaining_signers.push_back(signer);
+                }
+            }
+            profile.signers = remaining_signers;
+            profile_changed = true;
+        }
+
         // Decrement active driver count only when the driver was active.
         if status == DriverFleetStatus::Active && profile.total_active_drivers > 0 {
             profile.total_active_drivers -= 1;
+            profile_changed = true;
+        }
+
+        if profile_changed {
             let fleet_key = DataKey::Fleet(fleet_id);
             env.storage().persistent().set(&fleet_key, &profile);
-            // Issue #436: this branch rewrites the fleet profile but was the
-            // only `DataKey::Fleet` mutation in the contract that skipped the
-            // `extend_ttl` call, leaving the fleet's active profile TTL
-            // drifting out of sync with its mutation cycle and risking
-            // premature expiration. Every other `fleet_key` writer pairs its
-            // `set` with this extension; do the same here.
             env.storage().persistent().extend_ttl(
                 &fleet_key,
                 ttl::LEDGER_TTL_THRESHOLD,
