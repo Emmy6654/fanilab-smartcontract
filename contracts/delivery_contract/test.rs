@@ -121,7 +121,7 @@ impl MockEscrowContract {
         if delivery_id == 7777 {
             panic!("MockEscrowFailure");
         }
-        let placeholder = Address::generate(&_env);
+        let placeholder = _env.current_contract_address();
         let sender = _env
             .storage()
             .temporary()
@@ -182,7 +182,7 @@ impl MockEscrowContract {
             sender,
             recipient,
             driver,
-            token: Address::generate(&_env),
+            token: _env.current_contract_address(),
             amount: 0,
             status,
             created_at: _env.ledger().timestamp(),
@@ -1157,7 +1157,7 @@ fn test_get_combined_state_active_delivery() {
     let (client, shipper, driver, recipient, escrow_id, _) = setup_full(&env);
     let metadata = get_test_metadata(&env, 1);
     let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
-    client.assign_driver(&driver, &delivery_id, &driver);
+    client.assign_driver(&shipper, &delivery_id, &driver);
     set_mock_escrow_parties(&env, &escrow_id, &shipper, &recipient, &driver);
 
     let (delivery, _escrow, is_synchronized) = client.get_combined_state(&delivery_id);
@@ -1175,7 +1175,7 @@ fn test_get_combined_state_in_transit_delivery() {
     let (client, shipper, driver, recipient, escrow_id, _) = setup_full(&env);
     let metadata = get_test_metadata(&env, 1);
     let delivery_id = client.create_delivery(&shipper, &recipient, &metadata);
-    client.assign_driver(&driver, &delivery_id, &driver);
+    client.assign_driver(&shipper, &delivery_id, &driver);
     client.mark_in_transit(&driver, &delivery_id);
     set_mock_escrow_parties(&env, &escrow_id, &shipper, &recipient, &driver);
 
@@ -1246,7 +1246,7 @@ fn test_get_combined_state_rejects_party_mismatches() {
     );
     assert!(!client.get_combined_state(&delivery_id).2);
 
-    client.assign_driver(&driver, &delivery_id, &driver);
+    client.assign_driver(&sender, &delivery_id, &driver);
     set_mock_escrow_parties(
         &env,
         &escrow_id,
@@ -2519,7 +2519,7 @@ fn test_reclaim_delivery_expired_escrow_from_active_synchronises() {
 
     let did = client.create_delivery(&admin, &recipient, &get_test_metadata(&env, 2));
     // Pending → Active via assign_driver
-    client.assign_driver(&driver, &did, &driver);
+    client.assign_driver(&admin, &did, &driver);
     set_mock_escrow_parties(&env, &escrow_id, &admin, &recipient, &driver);
     assert_eq!(client.get_delivery(&did).status, DeliveryStatus::Active);
 
@@ -2540,7 +2540,7 @@ fn test_reclaim_delivery_expired_escrow_from_in_transit_synchronises() {
     let (client, admin, driver, recipient, escrow_id, _) = setup_full(&env);
 
     let did = client.create_delivery(&admin, &recipient, &get_test_metadata(&env, 3));
-    client.assign_driver(&driver, &did, &driver);
+    client.assign_driver(&admin, &did, &driver);
     client.mark_in_transit(&driver, &did);
     set_mock_escrow_parties(&env, &escrow_id, &admin, &recipient, &driver);
     assert_eq!(client.get_delivery(&did).status, DeliveryStatus::InTransit);
