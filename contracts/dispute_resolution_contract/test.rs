@@ -2312,3 +2312,108 @@ fn test_dispute_resolution_transitions_delivery_to_resolved_across_all_paths() {
     assert_eq!(delivery3.status, DeliveryStatus::Resolved);
 }
 
+// ── Issue #312 — has_dispute / get_dispute_count query coverage ──────────────
+
+/// Helper: create the mock delivery + escrow records `raise_dispute` requires
+/// (Active delivery, Locked escrow) and raise the dispute for `delivery_id`.
+fn raise_mock_dispute(
+    sender: &Address,
+    recipient: &Address,
+    driver: &Address,
+    delivery_contract: &Address,
+    escrow_contract: &Address,
+    dispute_client: &DisputeResolutionContractClient,
+    delivery_id: DeliveryId,
+) {
+    let env = &dispute_client.env;
+    let mut delivery_record = create_mock_delivery_record(
+        env,
+        delivery_id,
+        sender.clone(),
+        recipient.clone(),
+        DeliveryStatus::Active,
+        None,
+    );
+    // `resolve_dispute_refund_sender` requires an assigned driver
+    // (ProviderNotFound otherwise), so attach one up front.
+    delivery_record.driver = Some(driver.clone());
+    set_mock_delivery(env, delivery_contract, delivery_id, &delivery_record);
+    let escrow_record = create_mock_escrow_record(
+        sender.clone(),
+        recipient.clone(),
+        driver.clone(),
+        Address::generate(env),
+        shared_types::EscrowStatus::Locked,
+    );
+    set_mock_escrow(env, escrow_contract, u64::from(delivery_id), &escrow_record);
+    dispute_client.raise_dispute(sender, &delivery_id);
+}
+
+/// Issue #312: `has_dispute` must report existence without panicking — false
+/// for an unknown ID, true once raised, and still true after resolution
+/// (presence, not openness).
+#[test]
+fn test_has_dispute_reflects_dispute_existence() {
+    let (_env, admin, sender, recipient, driver, delivery_id, escrow_id, dispute_client) =
+        setup_test();
+
+    // Unknown delivery: returns false without panicking.
+    assert!(!dispute_client.has_dispute(&did(1)));
+
+    raise_mock_dispute(
+        &sender,
+        &recipient,
+        &driver,
+        &delivery_id,
+        &escrow_id,
+        &dispute_client,
+        did(1),
+    );
+    assert!(dispute_client.has_dispute(&did(1)));
+    // A different, never-raised ID still reports false.
+    assert!(!dispute_client.has_dispute(&did(2)));
+
+    // Existence is independent of status: a resolved dispute still exists.
+    dispute_client.resolve_dispute_refund_sender(&admin, &did(1));
+    assert!(dispute_client.has_dispute(&did(1)));
+}
+
+/// Issue #312: `get_dispute_count` starts at zero and increments once per
+/// raised dispute; resolving a dispute does not decrement the count (it is
+/// monotonically increasing).
+#[test]
+fn test_get_dispute_count_increments_for_each_raised_dispute() {
+    let (_env, admin, sender, recipient, driver, delivery_id, escrow_id, dispute_client) =
+        setup_test();
+
+    assert_eq!(dispute_client.get_dispute_count(), 0);
+
+    raise_mock_dispute(
+        &sender,
+        &recipient,
+        &driver,
+        &delivery_id,
+        &escrow_id,
+        &dispute_client,
+        did(1),
+    );
+    assert_eq!(dispute_client.get_dispute_count(), 1);
+
+    raise_mock_dispute(
+        &sender,
+        &recipient,
+        &driver,
+        &delivery_id,
+        &escrow_id,
+        &dispute_client,
+        did(2),
+    );
+    assert_eq!(dispute_client.get_dispute_count(), 2);
+    assert!(dispute_client.has_dispute(&did(1)));
+    assert!(dispute_client.has_dispute(&did(2)));
+
+    // Resolution does not shrink the "ever recorded" counter.
+    dispute_client.resolve_dispute_refund_sender(&admin, &did(1));
+    assert_eq!(dispute_client.get_dispute_count(), 2);
+}
+
