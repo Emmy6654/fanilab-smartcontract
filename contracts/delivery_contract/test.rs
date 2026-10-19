@@ -602,6 +602,19 @@ fn test_delivery_secondary_indexes_track_sender_and_recipient() {
 }
 
 #[test]
+fn test_get_deliveries_page_rejects_unknown_kind() {
+    let env = Env::default();
+    let (client, _admin) = setup_bare(&env);
+    let owner = Address::generate(&env);
+
+    let result = client.try_get_deliveries_page(&owner, &3, &0, &10);
+    match result {
+        Err(Ok(err)) => assert_eq!(err, DeliveryError::InvalidIndexKind.into()),
+        _ => panic!("Expected DeliveryError::InvalidIndexKind"),
+    }
+}
+
+#[test]
 fn test_delivery_batch_secondary_indexes_append_ids() {
     let env = Env::default();
     let (client, shipper, _driver, recipient, _escrow_id, _) = setup_full(&env);
@@ -2790,4 +2803,3 @@ fn test_assign_driver_succeeds_registered_active_driver() {
         DeliveryStatus::Active
     );
 }
-

@@ -124,6 +124,7 @@ pub enum DeliveryError {
     /// `Locked` state, at a point where funded escrow is a precondition
     /// (currently: the `Active -> InTransit` transition). See Issue #298.
     EscrowNotLocked = 6,
+    InvalidIndexKind = 7,
 }
 
 mod constants {
@@ -1179,6 +1180,9 @@ impl DeliveryContract {
 
     #[rustfmt::skip]
     pub fn get_deliveries_page(env: Env, owner: Address, kind: u32, offset: u32, limit: u32) -> soroban_sdk::Vec<DeliveryId> {
+        if kind > 2 {
+            panic_with_error!(&env, DeliveryError::InvalidIndexKind);
+        }
         index_page(&env, owner, kind, offset, limit)
     }
 
