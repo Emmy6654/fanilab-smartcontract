@@ -2255,6 +2255,28 @@ fn test_peer_pointer_setters_extend_instance_ttl() {
     }
 }
 
+#[test]
+fn test_reputation_config_setters_extend_instance_ttl() {
+    let (env, admin, _, _, _, _, _, dispute_client) = setup_test();
+    let dispute_id = dispute_client.address.clone();
+
+    for setter in 0..3 {
+        env.ledger().with_mut(|ledger| {
+            ledger.sequence_number += ttl::LEDGER_TTL_EXTEND_TO - 10;
+        });
+        match setter {
+            0 => dispute_client.set_dispute_reputation_penalty(&admin, &11),
+            1 => dispute_client.set_dispute_reputation_reward(&admin, &6),
+            _ => dispute_client.set_dispute_split_penalty(&admin, &6),
+        }
+        let remaining_ttl = env.deployer().get_contract_instance_ttl(&dispute_id);
+        assert!(
+            remaining_ttl >= ttl::LEDGER_TTL_THRESHOLD,
+            "reputation config setter {setter} must extend instance TTL (got {remaining_ttl})"
+        );
+    }
+}
+
 /// Issue #447: Integration tests proving delivery record correctly reaches
 /// terminal `DeliveryStatus::Resolved` across all three resolution paths.
 #[test]
