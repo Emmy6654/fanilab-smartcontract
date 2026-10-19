@@ -228,6 +228,9 @@ impl DeliveryContract {
         env.storage()
             .instance()
             .set(&DataKey::IdentityReputationContract, &identity_contract);
+        env.storage()
+            .instance()
+            .extend_ttl(ttl::LEDGER_TTL_THRESHOLD, ttl::LEDGER_TTL_EXTEND_TO);
     }
 
     /// Configure the `dispute_resolution_contract` that is the only caller
@@ -329,6 +332,9 @@ impl DeliveryContract {
         env.storage()
             .instance()
             .set(&DataKey::RequireKyc, &required);
+        env.storage()
+            .instance()
+            .extend_ttl(ttl::LEDGER_TTL_THRESHOLD, ttl::LEDGER_TTL_EXTEND_TO);
         env.events().publish(
             (Symbol::new(&env, "require_kyc_updated"),),
             (admin, required),
