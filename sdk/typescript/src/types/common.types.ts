@@ -156,8 +156,17 @@ export const ErrorCodes = {
 export interface ContractInvokeOptions {
   networkPassphrase?: string;
   serverUrl?: string;
+  /** RPC request timeout in milliseconds. */
   timeout?: number;
   timeoutSeconds?: number;
+  /** Initial delay between transaction status polls, in milliseconds. */
+  pollingIntervalMs?: number;
+  /** Maximum delay between transaction status polls, in milliseconds. */
+  pollingMaxIntervalMs?: number;
+  /** Maximum time to wait for a submitted transaction, in milliseconds. */
+  pollingTimeoutMs?: number;
+  /** Abort an in-progress transaction status wait. */
+  signal?: AbortSignal;
   fee?: string;
   sourceAccount?: string;
   signer?: Keypair;

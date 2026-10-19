@@ -61,6 +61,59 @@ export function native(value: ScVal): unknown {
   return scValToNative(value);
 }
 
+function abortError(): Error {
+  const error = new Error('Contract invocation was aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, milliseconds);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      reject(abortError());
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function awaitPollResult<T>(
+  request: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+  signal?: AbortSignal
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
+
+    const finish = (complete: () => void) => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      complete();
+    };
+    const timer = setTimeout(() => finish(() => reject(new Error(timeoutMessage))), timeoutMs);
+    const onAbort = () => finish(() => reject(abortError()));
+    signal?.addEventListener('abort', onAbort, { once: true });
+    request.then(
+      (result) => finish(() => resolve(result)),
+      (error: unknown) => finish(() => reject(error))
+    );
+  });
+}
+
 export class ContractInvoker {
   private readonly contract: Contract;
   private readonly defaults: ContractInvokeOptions;
@@ -108,18 +161,49 @@ export class ContractInvoker {
       );
     }
     if (submitted.status === 'PENDING') {
-      return this.waitForResult(server, submitted.hash);
+      return this.waitForResult(server, submitted.hash, config);
     }
     return undefined;
   }
 
-  private async waitForResult(server: SorobanRpc.Server, hash: string): Promise<unknown> {
+  private async waitForResult(
+    server: SorobanRpc.Server,
+    hash: string,
+    config: ContractInvokeOptions
+  ): Promise<unknown> {
+    const initialDelay = config.pollingIntervalMs ?? 1000;
+    const maxDelay = config.pollingMaxIntervalMs ?? 10_000;
+    const timeout = config.pollingTimeoutMs ?? 300_000;
+    if (!Number.isFinite(initialDelay) || initialDelay <= 0) {
+      throw new RangeError('pollingIntervalMs must be a positive number');
+    }
+    if (!Number.isFinite(maxDelay) || maxDelay < initialDelay) {
+      throw new RangeError('pollingMaxIntervalMs must be greater than or equal to pollingIntervalMs');
+    }
+    if (!Number.isFinite(timeout) || timeout <= 0) {
+      throw new RangeError('pollingTimeoutMs must be a positive number');
+    }
+
+    const deadline = Date.now() + timeout;
+    let interval = initialDelay;
     for (;;) {
-      const result = await server.getTransaction(hash);
-      if (result.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+      if (config.signal?.aborted) {
+        throw abortError();
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for Soroban transaction: ${hash}`);
+      }
+      const remaining = deadline - Date.now();
+      const result = await awaitPollResult(
+        server.getTransaction(hash),
+        remaining,
+        `Timed out waiting for Soroban transaction: ${hash}`,
+        config.signal
+      );
+      if (result.status === 'SUCCESS') {
         return result.returnValue ? native(result.returnValue) : undefined;
       }
-      if (result.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
+      if (result.status === 'FAILED') {
         const errorCodes = result.diagnosticEventsXdr?.flatMap(({ event }) => {
           const value = event.body.value.data;
           return value.type === 'scvError' && value.error.type === 'sceContract'
@@ -133,14 +217,22 @@ export class ContractInvoker {
           formatSorobanError('Soroban transaction failed', failure, errorCodes ?? [])
         );
       }
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const remainingAfterPoll = deadline - Date.now();
+      if (remainingAfterPoll <= 0) {
+        throw new Error(`Timed out waiting for Soroban transaction: ${hash}`);
+      }
+      await delay(Math.min(interval, remainingAfterPoll), config.signal);
+      interval = Math.min(interval * 2, maxDelay);
     }
   }
 
   private server(config: ContractInvokeOptions): SorobanRpc.Server {
     return new SorobanRpc.Server(
       this.require(config.serverUrl, 'serverUrl'),
-      { allowHttp: config.serverUrl?.startsWith('http://') }
+      {
+        allowHttp: config.serverUrl?.startsWith('http://'),
+        ...(config.timeout === undefined ? {} : { timeout: config.timeout }),
+      }
     );
   }
 
