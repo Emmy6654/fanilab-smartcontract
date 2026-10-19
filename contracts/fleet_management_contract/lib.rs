@@ -434,6 +434,7 @@ impl FleetManagementContract {
     /// fleet treasury.
     #[allow(deprecated)] // events().publish() is deprecated in SDK 27.0.0 but still functional; tracked in SOROBAN_SDK_27_MIGRATION.md#event-system-migration (Issue #114)
     pub fn reactivate_fleet(env: Env, caller: Address, fleet_id: u64) {
+        env.storage().instance().extend_ttl(ttl::LEDGER_TTL_THRESHOLD, ttl::LEDGER_TTL_EXTEND_TO);
         caller.require_auth();
         require_escrow_not_paused(&env);
 

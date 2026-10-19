@@ -419,6 +419,26 @@ fn test_pending_treasury_survives_rejected_confirmation_after_deactivation() {
     assert_eq!(client.get_fleet(&fleet_id).treasury, new_treasury);
 }
 
+#[test]
+fn test_reactivate_fleet_extends_instance_ttl() {
+    use soroban_sdk::testutils::Deployer as _;
+
+    let (env, client, _admin) = setup_test();
+    let (fleet_id, owner, _treasury) = register_fleet(&env, &client);
+    client.deactivate_fleet(&owner, &fleet_id);
+
+    env.ledger().with_mut(|ledger| {
+        ledger.sequence_number += ttl::LEDGER_TTL_EXTEND_TO - 10;
+    });
+    client.reactivate_fleet(&owner, &fleet_id);
+
+    let instance_ttl = env.deployer().get_contract_instance_ttl(&client.address);
+    assert!(
+        instance_ttl >= ttl::LEDGER_TTL_THRESHOLD,
+        "reactivate_fleet must extend the instance TTL (got {instance_ttl})"
+    );
+}
+
 // ── Issue #68 tests — add_driver_to_fleet ────────────────────────────────────
 
 #[test]
