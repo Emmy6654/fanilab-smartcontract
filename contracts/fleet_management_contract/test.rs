@@ -104,6 +104,18 @@ fn test_register_fleet_creates_profile_with_expected_fields() {
 }
 
 #[test]
+fn test_register_fleet_rejects_owner_as_treasury() {
+    let (env, client, _admin) = setup_test();
+    let owner = Address::generate(&env);
+
+    let result = client.try_register_fleet(&owner, &owner);
+    match result {
+        Err(Ok(err)) => assert_eq!(err, FleetError::InvalidConfiguration.into()),
+        _ => panic!("Expected FleetError::InvalidConfiguration"),
+    }
+}
+
+#[test]
 fn test_register_fleet_increments_counter() {
     let (env, client, _admin) = setup_test();
 
@@ -248,6 +260,35 @@ fn test_admin_reassign_fleet_owner_without_pending_treasury_change() {
 }
 
 #[test]
+fn test_admin_reassign_fleet_owner_rejects_treasury_address() {
+    let (env, client, admin) = setup_test();
+    let (fleet_id, _owner, treasury) = register_fleet(&env, &client);
+
+    let result = client.try_admin_reassign_fleet_owner(&admin, &fleet_id, &treasury);
+    match result {
+        Err(Ok(err)) => assert_eq!(err, FleetError::InvalidConfiguration.into()),
+        _ => panic!("Expected FleetError::InvalidConfiguration"),
+    }
+}
+
+#[test]
+fn test_admin_force_update_treasury_rejects_owner_and_current_treasury() {
+    let (env, client, admin) = setup_test();
+    let (fleet_id, owner, treasury) = register_fleet(&env, &client);
+
+    for invalid_treasury in [&owner, &treasury] {
+        let result =
+            client.try_admin_force_update_treasury(&admin, &fleet_id, invalid_treasury);
+        match result {
+            Err(Ok(err)) => assert_eq!(err, FleetError::InvalidConfiguration.into()),
+            _ => panic!("Expected FleetError::InvalidConfiguration"),
+        }
+    }
+
+    assert_eq!(client.get_fleet(&fleet_id).treasury, treasury);
+}
+
+#[test]
 fn test_admin_force_update_treasury_requires_admin() {
     let (env, client, _admin) = setup_test();
     let (fleet_id, _owner, treasury) = register_fleet(&env, &client);
@@ -284,6 +325,27 @@ fn test_update_fleet_treasury_does_not_apply_immediately() {
 
     let pending = client.get_pending_treasury_update(&fleet_id).unwrap();
     assert_eq!(pending.treasury, new_treasury);
+}
+
+#[test]
+fn test_update_fleet_treasury_rejects_owner_and_current_treasury() {
+    let (env, client, _admin) = setup_test();
+    let (fleet_id, owner, treasury) = register_fleet(&env, &client);
+
+    for invalid_treasury in [&owner, &treasury] {
+        let result = client.try_update_fleet_treasury(
+            &owner,
+            &fleet_id,
+            invalid_treasury,
+            &no_co_signers(&env),
+        );
+        match result {
+            Err(Ok(err)) => assert_eq!(err, FleetError::InvalidConfiguration.into()),
+            _ => panic!("Expected FleetError::InvalidConfiguration"),
+        }
+    }
+
+    assert_eq!(client.get_pending_treasury_update(&fleet_id), None);
 }
 
 #[test]
@@ -1528,6 +1590,58 @@ fn test_remove_driver_not_signer_but_is_driver() {
 
     let status = client.get_driver_fleet_status(&fleet_id, &driver);
     assert_eq!(status, Some(DriverFleetStatus::Removed));
+}
+
+#[test]
+fn test_driver_self_removal_removes_them_from_signers() {
+    let (env, client, _admin) = setup_test();
+    let (fleet_id, owner, _treasury) = register_fleet(&env, &client);
+    let driver = Address::generate(&env);
+
+    let mut signers = soroban_sdk::Vec::new(&env);
+    signers.push_back(owner.clone());
+    signers.push_back(driver.clone());
+    client.configure_signers(&owner, &fleet_id, &signers, &1u32, &no_co_signers(&env));
+
+    client.add_driver_to_fleet(&owner, &fleet_id, &driver, &no_co_signers(&env));
+    client.accept_fleet_invite(&fleet_id, &driver);
+    client.remove_driver_from_fleet(&fleet_id, &driver, &driver, &no_co_signers(&env));
+
+    let (remaining_signers, threshold) = client.get_fleet_signers(&fleet_id);
+    assert_eq!(remaining_signers, soroban_sdk::vec![&env, owner]);
+    assert_eq!(threshold, 1);
+    assert_eq!(
+        client.get_driver_fleet_status(&fleet_id, &driver),
+        Some(DriverFleetStatus::Removed)
+    );
+}
+
+#[test]
+fn test_driver_cannot_self_remove_if_signer_threshold_would_be_invalid() {
+    let (env, client, _admin) = setup_test();
+    let (fleet_id, owner, _treasury) = register_fleet(&env, &client);
+    let driver = Address::generate(&env);
+
+    let mut signers = soroban_sdk::Vec::new(&env);
+    signers.push_back(owner.clone());
+    signers.push_back(driver.clone());
+    client.configure_signers(&owner, &fleet_id, &signers, &2u32, &no_co_signers(&env));
+
+    client.add_driver_to_fleet(&owner, &fleet_id, &driver, &no_co_signers(&env));
+    client.accept_fleet_invite(&fleet_id, &driver);
+
+    let result =
+        client.try_remove_driver_from_fleet(&fleet_id, &driver, &driver, &no_co_signers(&env));
+    match result {
+        Err(Ok(err)) => assert_eq!(err, FleetError::InvalidConfiguration.into()),
+        _ => panic!("Expected FleetError::InvalidConfiguration"),
+    }
+
+    assert_eq!(
+        client.get_driver_fleet_status(&fleet_id, &driver),
+        Some(DriverFleetStatus::Active)
+    );
+    assert_eq!(client.get_fleet_signers(&fleet_id).0, signers);
 }
 
 // ── Cross-contract integration tests ──────────────────────────────────────────

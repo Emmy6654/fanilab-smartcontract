@@ -301,6 +301,9 @@ impl FleetManagementContract {
         env.storage().instance().extend_ttl(ttl::LEDGER_TTL_THRESHOLD, ttl::LEDGER_TTL_EXTEND_TO);
         owner.require_auth();
         require_escrow_not_paused(&env);
+        if owner == treasury {
+            panic_with_error!(&env, FleetError::InvalidConfiguration);
+        }
 
         // Bump and persist the fleet counter.
         let counter_key = DataKey::FleetCounter;
@@ -505,6 +508,10 @@ impl FleetManagementContract {
             .get(&fleet_key)
             .unwrap_or_else(|| panic_with_error!(&env, FleetError::FleetNotFound));
 
+        if new_owner == profile.treasury {
+            panic_with_error!(&env, FleetError::InvalidConfiguration);
+        }
+
         let old_owner = profile.owner.clone();
 
         profile.owner = new_owner.clone();
@@ -580,6 +587,10 @@ impl FleetManagementContract {
             .get(&fleet_key)
             .unwrap_or_else(|| panic_with_error!(&env, FleetError::FleetNotFound));
 
+        if new_treasury == profile.owner || new_treasury == profile.treasury {
+            panic_with_error!(&env, FleetError::InvalidConfiguration);
+        }
+
         let old_treasury = profile.treasury.clone();
         profile.treasury = new_treasury.clone();
 
@@ -637,6 +648,10 @@ impl FleetManagementContract {
             .persistent()
             .get(&DataKey::Fleet(fleet_id))
             .unwrap_or_else(|| panic_with_error!(&env, FleetError::FleetNotFound));
+
+        if treasury == profile.owner || treasury == profile.treasury {
+            panic_with_error!(&env, FleetError::InvalidConfiguration);
+        }
 
         require_signer_threshold(&env, &profile, &owner, &co_signers);
 
@@ -700,6 +715,10 @@ impl FleetManagementContract {
             .persistent()
             .get(&DataKey::Fleet(fleet_id))
             .unwrap_or_else(|| panic_with_error!(&env, FleetError::FleetNotFound));
+
+        if pending.treasury == profile.owner || pending.treasury == profile.treasury {
+            panic_with_error!(&env, FleetError::InvalidConfiguration);
+        }
 
         // A deactivated fleet's core configuration is frozen: a pending
         // treasury redirect proposed while the fleet was active must not be
