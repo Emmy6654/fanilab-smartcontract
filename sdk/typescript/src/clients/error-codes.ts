@@ -4,6 +4,7 @@ const ERROR_NAMES: Record<number, string[]> = {
     'EscrowError.InvalidState',
     'DeliveryError.InvalidState',
     'FleetError.AlreadyInitialized',
+    'SettlementError.SwapNotImplemented',
   ],
   2: [
     'FaniLabError.AlreadyInitialized',

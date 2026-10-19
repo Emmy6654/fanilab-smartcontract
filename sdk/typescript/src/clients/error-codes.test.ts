@@ -13,6 +13,12 @@ describe('Soroban contract error formatting', () => {
     );
   });
 
+  test('includes the documented settlement error name for code 1', () => {
+    expect(formatSorobanError('Soroban simulation failed', 'Error(Contract, #1)')).toContain(
+      'SettlementError.SwapNotImplemented'
+    );
+  });
+
   test('does not alter errors without a documented contract code', () => {
     expect(formatSorobanError('Soroban simulation failed', 'network unavailable')).toBe(
       'Soroban simulation failed: network unavailable'
