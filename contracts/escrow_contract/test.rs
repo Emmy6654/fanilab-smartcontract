@@ -4,7 +4,7 @@ use super::*;
 use proptest::prelude::*;
 use shared_types::{DeliveryId, EscrowReleasedEvent, FaniLabError};
 use soroban_sdk::{
-    testutils::{storage::Persistent as _, Address as _, Events, Ledger as _},
+    testutils::{storage::Persistent as _, Address as _, Deployer as _, Events, Ledger as _},
     token::{Client as TokenClient, StellarAssetClient},
     xdr, Address, Env, IntoVal, TryFromVal, TryIntoVal, Val,
 };
@@ -1381,6 +1381,44 @@ fn test_sweep_untracked_balance_unauthorized_rejected() {
         Err(Ok(err)) => assert_eq!(err, FaniLabError::Unauthorized.into()),
         _ => panic!("Expected FaniLabError::Unauthorized"),
     }
+}
+
+#[test]
+fn test_sweep_untracked_balance_rejects_contract_as_recipient() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    client.init(&admin, &token, &0);
+
+    let result = client.try_sweep_untracked_balance(&admin, &token, &contract_id);
+    match result {
+        Err(Ok(err)) => assert_eq!(err, FaniLabError::InvalidState.into()),
+        _ => panic!("Expected FaniLabError::InvalidState for self-transfer"),
+    }
+}
+
+#[test]
+fn test_sweep_untracked_balance_extends_instance_ttl() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    client.init(&admin, &token, &0);
+    mint(&env, &token, &contract_id, 100);
+
+    env.ledger().with_mut(|ledger| {
+        ledger.sequence_number += ttl::LEDGER_TTL_EXTEND_TO - 10;
+    });
+    client.sweep_untracked_balance(&admin, &token, &Address::generate(&env));
+
+    let remaining_ttl = env.deployer().get_contract_instance_ttl(&contract_id);
+    assert!(
+        remaining_ttl >= ttl::LEDGER_TTL_THRESHOLD,
+        "sweep_untracked_balance must extend instance TTL (got {remaining_ttl})"
+    );
 }
 
 // ── Issue #90: clear_settlement_contract tests ──────────────────────────────

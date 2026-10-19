@@ -2160,6 +2160,11 @@ impl EscrowContract {
     ) -> i128 {
         admin.require_auth();
         require_admin(&env, &admin);
+        extend_instance_ttl(&env);
+
+        if recipient == env.current_contract_address() {
+            panic_with_error!(&env, FaniLabError::InvalidState);
+        }
 
         let contract_balance =
             token::Client::new(&env, &token).balance(&env.current_contract_address());
