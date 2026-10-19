@@ -167,6 +167,10 @@ export interface ContractInvokeOptions {
   pollingTimeoutMs?: number;
   /** Abort an in-progress transaction status wait. */
   signal?: AbortSignal;
+  /** Extend persistent storage entries whose remaining TTL is at or below this ledger count. */
+  ttlThresholdLedgers?: number;
+  /** Minimum TTL, in ledgers, for entries selected for extension. */
+  ttlExtendToLedgers?: number;
   fee?: string;
   sourceAccount?: string;
   signer?: Keypair;

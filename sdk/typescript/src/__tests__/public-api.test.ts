@@ -23,6 +23,8 @@ describe('SDK package entry point', () => {
   test('exports common client option types', () => {
     const options: sdk.ContractInvokeOptions = {
       timeoutSeconds: 20,
+      ttlThresholdLedgers: 50_000,
+      ttlExtendToLedgers: 200_000,
     };
     const pagination: sdk.PaginationOptions = { offset: 0, limit: 10 };
 

@@ -2,9 +2,11 @@ import {
   Address,
   Contract,
   Keypair,
+  Operation,
+  SorobanDataBuilder,
   nativeToScVal,
+  rpc as SorobanRpc,
   scValToNative,
-  SorobanRpc,
   TransactionBuilder,
   xdr,
 } from '@stellar/stellar-sdk';
@@ -59,6 +61,30 @@ export function map(fields: Array<[string, ScVal]>): ScVal {
 
 export function native(value: ScVal): unknown {
   return scValToNative(value);
+}
+
+const DEFAULT_TTL_THRESHOLD_LEDGERS = 100_000;
+const DEFAULT_TTL_EXTEND_TO_LEDGERS = 518_400;
+
+function canExtendTtl(key: xdr.LedgerKey): boolean {
+  return key.type === 'contractCode' ||
+    (key.type === 'contractData' && key.contractData.durability.name === 'persistent');
+}
+
+export function findExpiringPersistentKeys(
+  entries: Array<{ key: xdr.LedgerKey; liveUntilLedgerSeq?: number }>,
+  latestLedger: number,
+  thresholdLedgers: number
+): xdr.LedgerKey[] {
+  return entries
+    .filter(
+      (entry) =>
+        canExtendTtl(entry.key) &&
+        entry.liveUntilLedgerSeq !== undefined &&
+        entry.liveUntilLedgerSeq > latestLedger &&
+        entry.liveUntilLedgerSeq - latestLedger <= thresholdLedgers
+    )
+    .map((entry) => entry.key);
 }
 
 function abortError(): Error {
@@ -132,24 +158,47 @@ export class ContractInvoker {
     const server = this.server(config);
     const accountId = this.require(config.sourceAccount, 'sourceAccount');
     const networkPassphrase = this.require(config.networkPassphrase, 'networkPassphrase');
-    const account = await server.getAccount(accountId);
-    const transaction = new TransactionBuilder(account, {
-      fee: config.fee ?? '100000',
-      networkPassphrase,
-    })
-      .setTimeout(config.timeoutSeconds ?? 30)
-      .addOperation(this.contract.call(functionName, ...args))
-      .build();
-    const prepared = await server.prepareTransaction(transaction);
-
+    const buildTransaction = async () => {
+      const account = await server.getAccount(accountId);
+      return new TransactionBuilder(account, {
+        fee: config.fee ?? '100000',
+        networkPassphrase,
+      })
+        .setTimeout(config.timeoutSeconds ?? 30)
+        .addOperation(this.contract.call(functionName, ...args))
+        .build();
+    };
+    let transaction = await buildTransaction();
+    let simulation = await server.simulateTransaction(transaction);
+    if (SorobanRpc.Api.isSimulationError(simulation)) {
+      throw new Error(formatSorobanError('Soroban simulation failed', simulation.error));
+    }
     if (!config.signer) {
-      const simulation = await server.simulateTransaction(transaction);
-      if (SorobanRpc.Api.isSimulationError(simulation)) {
-        throw new Error(formatSorobanError('Soroban simulation failed', simulation.error));
-      }
       return simulation.result?.retval ? native(simulation.result.retval) : undefined;
     }
 
+    const expiringKeys = await this.expiringFootprintKeys(
+      server,
+      simulation.transactionData,
+      config
+    );
+    if (expiringKeys.length > 0) {
+      await this.extendFootprintTtl(
+        server,
+        accountId,
+        networkPassphrase,
+        simulation.transactionData,
+        expiringKeys,
+        config
+      );
+      transaction = await buildTransaction();
+      simulation = await server.simulateTransaction(transaction);
+      if (SorobanRpc.Api.isSimulationError(simulation)) {
+        throw new Error(formatSorobanError('Soroban simulation failed', simulation.error));
+      }
+    }
+
+    const prepared = SorobanRpc.assembleTransaction(transaction, simulation).build();
     prepared.sign(config.signer);
     const submitted = await server.sendTransaction(prepared);
     if (submitted.status === 'ERROR') {
@@ -164,6 +213,78 @@ export class ContractInvoker {
       return this.waitForResult(server, submitted.hash, config);
     }
     return undefined;
+  }
+
+  private async expiringFootprintKeys(
+    server: SorobanRpc.Server,
+    transactionData: SorobanDataBuilder,
+    config: ContractInvokeOptions
+  ): Promise<xdr.LedgerKey[]> {
+    const threshold = config.ttlThresholdLedgers ?? DEFAULT_TTL_THRESHOLD_LEDGERS;
+    const extendTo = config.ttlExtendToLedgers ?? DEFAULT_TTL_EXTEND_TO_LEDGERS;
+    if (!Number.isSafeInteger(threshold) || threshold <= 0) {
+      throw new RangeError('ttlThresholdLedgers must be a positive integer');
+    }
+    if (!Number.isSafeInteger(extendTo) || extendTo <= threshold) {
+      throw new RangeError('ttlExtendToLedgers must be greater than ttlThresholdLedgers');
+    }
+
+    const candidates = [
+      ...transactionData.getReadOnly(),
+      ...transactionData.getReadWrite(),
+    ].filter(canExtendTtl);
+    if (candidates.length === 0) {
+      return [];
+    }
+
+    const ledgerEntries = await server.getLedgerEntries(...candidates);
+    return findExpiringPersistentKeys(ledgerEntries.entries, ledgerEntries.latestLedger, threshold);
+  }
+
+  private async extendFootprintTtl(
+    server: SorobanRpc.Server,
+    accountId: string,
+    networkPassphrase: string,
+    transactionData: SorobanDataBuilder,
+    keys: xdr.LedgerKey[],
+    config: ContractInvokeOptions
+  ): Promise<void> {
+    const extendTo = config.ttlExtendToLedgers ?? DEFAULT_TTL_EXTEND_TO_LEDGERS;
+    const account = await server.getAccount(accountId);
+    const ttlTransaction = new TransactionBuilder(account, {
+      fee: config.fee ?? '100000',
+      networkPassphrase,
+    })
+      .setTimeout(config.timeoutSeconds ?? 30)
+      .addOperation(Operation.extendFootprintTtl({ extendTo }))
+      .setSorobanData(
+        new SorobanDataBuilder(transactionData.build())
+          .setFootprint(keys, [])
+          .build()
+      )
+      .build();
+    const simulation = await server.simulateTransaction(ttlTransaction);
+    if (SorobanRpc.Api.isSimulationError(simulation)) {
+      throw new Error(
+        formatSorobanError('Soroban TTL extension simulation failed', simulation.error)
+      );
+    }
+    const prepared = SorobanRpc.assembleTransaction(ttlTransaction, simulation).build();
+    prepared.sign(this.require(config.signer, 'signer'));
+
+    const submitted = await server.sendTransaction(prepared);
+    if (submitted.status === 'ERROR') {
+      throw new Error(
+        formatSorobanError(
+          'Soroban TTL extension submission failed',
+          submitted.errorResult?.toString() ?? 'unknown error'
+        )
+      );
+    }
+    if (submitted.status !== 'PENDING') {
+      throw new Error(`Soroban TTL extension returned unexpected status: ${submitted.status}`);
+    }
+    await this.waitForResult(server, submitted.hash, config);
   }
 
   private async waitForResult(
