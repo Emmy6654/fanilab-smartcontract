@@ -253,6 +253,14 @@ pub mod events {
         Symbol::new(env, "admin_transferred")
     }
 
+    pub fn admin_proposed(env: &Env) -> Symbol {
+        Symbol::new(env, "admin_proposed")
+    }
+
+    pub fn admin_proposal_cancelled(env: &Env) -> Symbol {
+        Symbol::new(env, "admin_proposal_cancelled")
+    }
+
     pub fn protocol_pause_status_changed(env: &Env) -> Symbol {
         Symbol::new(env, "protocol_pause_status_changed")
     }

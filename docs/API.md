@@ -124,7 +124,9 @@ escrow_contract.update_platform_fee(
 ```
 
 #### `propose_admin`
-Initiate admin transfer to a new address.
+Initiate admin transfer to a new address. The current admin can cancel a
+pending nomination with `cancel_admin_proposal` before the proposed admin
+accepts. This emits `admin_proposed` with `(current_admin, new_admin)`.
 
 **Parameters:**
 - `current_admin: Address` - Current admin address
@@ -138,6 +140,25 @@ escrow_contract.propose_admin(
     &current_admin,
     &new_admin_address
 );
+```
+
+#### `cancel_admin_proposal`
+Cancel the pending admin nomination. Only the current admin may cancel, and a
+proposal must be pending. Emits `admin_proposal_cancelled` with
+`(current_admin, cancelled_admin)`.
+
+**Parameters:**
+- `current_admin: Address` - Current admin address
+
+**Authorization:** Current admin
+
+**Errors:**
+- `Unauthorized` - Caller is not the current admin
+- `InvalidState` - No admin proposal is pending
+
+**Example:**
+```rust
+escrow_contract.cancel_admin_proposal(&current_admin);
 ```
 
 #### `accept_admin`

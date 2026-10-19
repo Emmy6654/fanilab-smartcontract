@@ -962,6 +962,7 @@ impl EscrowContract {
         get_delivery_contract(&env)
     }
 
+    #[allow(deprecated)] // events().publish() is deprecated in SDK 27.0.0 but still functional; tracked in SOROBAN_SDK_27_MIGRATION.md#event-system-migration (Issue #114)
     pub fn propose_admin(env: Env, current_admin: Address, new_admin: Address) {
         current_admin.require_auth();
         let stored_admin: Address = env
@@ -976,6 +977,32 @@ impl EscrowContract {
             .instance()
             .set(&DataKey::PendingAdmin, &new_admin);
         extend_instance_ttl(&env);
+        env.events()
+            .publish((events::admin_proposed(&env),), (current_admin, new_admin));
+    }
+
+    #[allow(deprecated)] // events().publish() is deprecated in SDK 27.0.0 but still functional; tracked in SOROBAN_SDK_27_MIGRATION.md#event-system-migration (Issue #114)
+    pub fn cancel_admin_proposal(env: Env, current_admin: Address) {
+        current_admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&StorageKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::NotInitialized));
+        if stored_admin != current_admin {
+            panic_with_error!(&env, FaniLabError::Unauthorized);
+        }
+        let pending_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::InvalidState));
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        extend_instance_ttl(&env);
+        env.events().publish(
+            (events::admin_proposal_cancelled(&env),),
+            (current_admin, pending_admin),
+        );
     }
 
     #[allow(deprecated)] // events().publish() is deprecated in SDK 27.0.0 but still functional; tracked in SOROBAN_SDK_27_MIGRATION.md#event-system-migration (Issue #114)
