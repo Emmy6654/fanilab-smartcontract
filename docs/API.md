@@ -1119,6 +1119,8 @@ Create a new delivery request.
 
 **Returns:** `DeliveryId`
 
+**Validation:** `origin` and `destination` must each contain 2–256 bytes.
+
 **Events:** `delivery_created`
 
 **State Changes:**
@@ -1448,7 +1450,8 @@ Update a delivery's metadata while it is still `Pending` and only by the origina
 **Errors:**
 - `Unauthorized` - Caller is not the sender
 - `InvalidState` - Delivery is not `Pending`
-- `InvalidMetadata` - The replacement metadata fails validation
+- `InvalidMetadata` - The replacement metadata fails validation, including when
+  `origin` or `destination` is shorter than 2 bytes or longer than 256 bytes
 - `DeliveryNotFound` - No delivery exists for this ID
 
 **Events:** `delivery_metadata_updated`
