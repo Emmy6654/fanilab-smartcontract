@@ -308,6 +308,14 @@ impl DisputeResolutionContract {
             }
         }
 
+        // The target must actually be on the roster.  Without this guard,
+        // removing a non-member would filter nothing out, rewrite the
+        // unchanged list, drop a DataKey::Admin flag that was never set, and
+        // publish an `admin_removed` event for a removal that never happened.
+        if new_list.len() == admin_list.len() {
+            panic_with_error!(&env, FaniLabError::InvalidState);
+        }
+
         // Removing the last admin would permanently brick governance — no one
         // would be left who could call add_admin to recover.
         if new_list.is_empty() {

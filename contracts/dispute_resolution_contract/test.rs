@@ -356,6 +356,36 @@ fn test_remove_admin_allowed_when_multiple_admins_remain() {
     assert!(dispute_client.is_admin(&second_admin));
 }
 
+/// Removing an address that is not on the roster must be rejected: the
+/// filter would remove nothing, rewrite the unchanged list, and publish a
+/// misleading `admin_removed` event for a removal that never happened.
+#[test]
+fn test_remove_nonexistent_admin_rejected() {
+    let (env, admin, _, _, _, _, _, dispute_client) = setup_test();
+
+    let second_admin = Address::generate(&env);
+    dispute_client.add_admin(&admin, &second_admin);
+    assert_eq!(dispute_client.list_admins().len(), 2);
+
+    let stranger = Address::generate(&env);
+    let result = dispute_client.try_remove_admin(&admin, &stranger);
+    match result {
+        Err(Ok(err)) => assert_eq!(err, FaniLabError::InvalidState.into()),
+        other => panic!("expected InvalidState when removing a non-admin, got {other:?}"),
+    }
+
+    // The roster and flags are untouched...
+    assert_eq!(dispute_client.list_admins().len(), 2);
+    assert!(dispute_client.is_admin(&admin));
+    assert!(dispute_client.is_admin(&second_admin));
+    assert!(!dispute_client.is_admin(&stranger));
+
+    // ...and no `admin_removed` event was published: the harness only
+    // surfaces events from the most recent invocation (the failed
+    // `try_remove_admin`), whose events were rolled back with it.
+    assert_eq!(env.events().all().events().len(), 0);
+}
+
 #[test]
 #[should_panic(expected = "HostError: Error(Contract, #1)")] // FaniLabError::Unauthorized
 fn test_unauthorized_add_admin_fails() {
