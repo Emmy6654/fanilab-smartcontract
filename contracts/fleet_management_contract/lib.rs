@@ -763,6 +763,8 @@ impl FleetManagementContract {
     ///
     /// `caller` must be an authorized signer and must sign the transaction.
     /// Stores a `Pending` invite for `driver` under this fleet.
+    /// If an identity contract is configured, the driver must already be
+    /// registered there before an invitation can be issued.
     /// The driver must later call `accept_fleet_invite` to become active.
     /// `co_signers` supplies any additional signer authorizations needed to
     /// satisfy the fleet's `signature_threshold` beyond `caller` alone — pass
@@ -790,6 +792,7 @@ impl FleetManagementContract {
         }
 
         require_signer_threshold(&env, &profile, &caller, &co_signers);
+        require_registered_driver(&env, &driver);
 
         let invite_key = DataKey::DriverFleet(fleet_id, driver.clone());
 

@@ -2044,14 +2044,11 @@ fn setup_with_identity(
     identity_reputation_contract::IdentityReputationContractClient::new(env, &identity_id)
 }
 
-/// The core regression test for #451: an address that was invited but never
-/// registered in the identity/reputation contract must NOT be able to promote
-/// itself to `Active`. Such an address can never legally complete a delivery,
-/// so allowing it in permanently wastes one of the `MAX_ROSTER_SIZE`-bounded
-/// roster slots and costs the fleet owner gas to evict later.
+/// Reject unregistered addresses before creating an invitation, since they
+/// can never legally complete a delivery and would otherwise occupy a roster
+/// slot after acceptance becomes possible.
 #[test]
-#[should_panic(expected = "Error(Contract, #13)")] // FleetError::DriverNotRegistered
-fn test_accept_invite_rejected_for_unregistered_driver() {
+fn test_add_invite_rejected_for_unregistered_driver() {
     let (env, client, admin) = setup_test();
     let identity = setup_with_identity(&env, &client, &admin);
 
@@ -2059,19 +2056,21 @@ fn test_accept_invite_rejected_for_unregistered_driver() {
     let unregistered = Address::generate(&env);
     assert!(!identity.has_driver_profile(&unregistered));
 
-    client.add_driver_to_fleet(&owner, &fleet_id, &unregistered, &no_co_signers(&env));
-    // The invite is genuinely Pending, so the only thing that can reject this
-    // is the registration check.
+    let result =
+        client.try_add_driver_to_fleet(&owner, &fleet_id, &unregistered, &no_co_signers(&env));
+    match result {
+        Err(Ok(err)) => assert_eq!(err, FleetError::DriverNotRegistered.into()),
+        _ => panic!("Expected FleetError::DriverNotRegistered"),
+    }
+
     assert_eq!(
         client.get_driver_fleet_status(&fleet_id, &unregistered),
-        Some(DriverFleetStatus::Pending)
+        None
     );
-
-    client.accept_fleet_invite(&fleet_id, &unregistered);
+    assert_eq!(client.get_fleet(&fleet_id).total_active_drivers, 0);
 }
 
-/// The same unregistered address must still be able to accept after registering
-/// — the check gates on profile existence, not on a permanent blacklist.
+/// Once registered, a driver can receive and accept an invitation.
 #[test]
 fn test_accept_invite_succeeds_once_driver_registers() {
     let (env, client, admin) = setup_test();
@@ -2080,8 +2079,8 @@ fn test_accept_invite_succeeds_once_driver_registers() {
     let (fleet_id, owner, _treasury) = register_fleet(&env, &client);
     let driver = Address::generate(&env);
 
-    client.add_driver_to_fleet(&owner, &fleet_id, &driver, &no_co_signers(&env));
     identity.register_driver(&driver);
+    client.add_driver_to_fleet(&owner, &fleet_id, &driver, &no_co_signers(&env));
     client.accept_fleet_invite(&fleet_id, &driver);
 
     assert_eq!(
@@ -2091,26 +2090,38 @@ fn test_accept_invite_succeeds_once_driver_registers() {
     assert_eq!(client.get_fleet(&fleet_id).total_active_drivers, 1);
 }
 
-/// A rejected acceptance must leave no trace: the invite stays `Pending` and no
-/// roster slot is consumed, so the fleet owner is never billed to evict the
-/// address.
+/// A rejected invitation must leave no trace, and the same address can be
+/// invited after registration without an eviction or cleanup transaction.
 #[test]
-fn test_rejected_acceptance_does_not_consume_roster_slot() {
+fn test_rejected_invitation_leaves_no_slot_and_can_be_retried() {
     let (env, client, admin) = setup_test();
-    let _identity = setup_with_identity(&env, &client, &admin);
+    let identity = setup_with_identity(&env, &client, &admin);
 
     let (fleet_id, owner, _treasury) = register_fleet(&env, &client);
     let unregistered = Address::generate(&env);
-    client.add_driver_to_fleet(&owner, &fleet_id, &unregistered, &no_co_signers(&env));
 
-    let result = client.try_accept_fleet_invite(&fleet_id, &unregistered);
+    let result = client.try_add_driver_to_fleet(
+        &owner,
+        &fleet_id,
+        &unregistered,
+        &no_co_signers(&env),
+    );
     assert!(result.is_err());
 
     assert_eq!(
         client.get_driver_fleet_status(&fleet_id, &unregistered),
-        Some(DriverFleetStatus::Pending)
+        None
     );
     assert_eq!(client.get_fleet(&fleet_id).total_active_drivers, 0);
+
+    identity.register_driver(&unregistered);
+    client.add_driver_to_fleet(&owner, &fleet_id, &unregistered, &no_co_signers(&env));
+    client.accept_fleet_invite(&fleet_id, &unregistered);
+    assert_eq!(
+        client.get_driver_fleet_status(&fleet_id, &unregistered),
+        Some(DriverFleetStatus::Active)
+    );
+    assert_eq!(client.get_fleet(&fleet_id).total_active_drivers, 1);
 }
 
 /// Deployments that never configure an identity contract keep the pre-#451
