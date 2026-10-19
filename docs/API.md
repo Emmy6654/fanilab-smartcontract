@@ -724,20 +724,22 @@ escrow_contract.release_expired_holdback(&delivery_id);
 Admin-only configuration: set the holdback window (in seconds) that must elapse
 before `release_expired_holdback` may be called.
 
-The window must be at least `MIN_HOLDBACK_WINDOW_SECONDS` (86 400 s = 1 day) to
-guarantee the recipient has a realistic opportunity to either release the escrow or
-raise a dispute before the driver can claim it unilaterally. The default when no
-value has been set is `DEFAULT_HOLDBACK_WINDOW_SECONDS` (259 200 s = 3 days).
+The window must be between `MIN_HOLDBACK_WINDOW_SECONDS` (86 400 s = 1 day) and
+`MAX_HOLDBACK_WINDOW_SECONDS` (31 536 000 s = 1 year), inclusive. The minimum
+guarantees the recipient has a realistic opportunity to either release the escrow
+or raise a dispute before the driver can claim it unilaterally; the maximum
+prevents impractically long release timelines. The default when no value has
+been set is `DEFAULT_HOLDBACK_WINDOW_SECONDS` (259 200 s = 3 days).
 
 **Parameters:**
 - `admin: Address` - Admin address (must sign)
-- `new_window_seconds: u64` - New holdback window in seconds (must be ≥ 86 400)
+- `new_window_seconds: u64` - New holdback window in seconds (must be between 86 400 and 31 536 000, inclusive)
 
 **Authorization:** Admin only
 
 **Errors:**
 - `Unauthorized` - Caller is not the stored admin
-- `InvalidState` - `new_window_seconds` is below `MIN_HOLDBACK_WINDOW_SECONDS` (86 400 s)
+- `InvalidState` - `new_window_seconds` is outside the permitted range of 86 400–31 536 000 seconds
 
 **Events:** `holdback_window_updated`
 

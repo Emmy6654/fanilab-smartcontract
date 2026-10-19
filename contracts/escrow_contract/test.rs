@@ -6286,6 +6286,53 @@ fn test_set_holdback_window_accepts_exact_minimum() {
     );
 }
 
+/// Exactly the maximum is accepted.
+#[test]
+fn test_set_holdback_window_accepts_exact_maximum() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    client.init(&admin, &token, &0);
+
+    client.set_holdback_window(&admin, &constants::MAX_HOLDBACK_WINDOW_SECONDS);
+
+    assert_eq!(
+        client.get_holdback_window(),
+        constants::MAX_HOLDBACK_WINDOW_SECONDS
+    );
+}
+
+/// A value above the maximum is rejected and leaves the configured window
+/// unchanged.
+#[test]
+fn test_set_holdback_window_rejects_above_maximum() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    client.init(&admin, &token, &0);
+
+    client.set_holdback_window(&admin, &constants::MIN_HOLDBACK_WINDOW_SECONDS);
+    let result = client.try_set_holdback_window(
+        &admin,
+        &(constants::MAX_HOLDBACK_WINDOW_SECONDS + 1),
+    );
+    match result {
+        Err(Ok(err)) => assert_eq!(err, EscrowError::InvalidState.into()),
+        _ => panic!("Expected EscrowError::InvalidState for an above-maximum window"),
+    }
+
+    assert_eq!(
+        client.get_holdback_window(),
+        constants::MIN_HOLDBACK_WINDOW_SECONDS
+    );
+}
+
 /// One second below the minimum is rejected with `InvalidState` (code 5), and
 /// the previously configured window is left untouched.
 #[test]

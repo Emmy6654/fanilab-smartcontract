@@ -39,6 +39,9 @@ pub mod constants {
     /// recipient's realistic opportunity to release or dispute the escrow
     /// before the driver can claim it unilaterally.
     pub const MIN_HOLDBACK_WINDOW_SECONDS: u64 = 24 * 60 * 60; // 1 day
+    /// Maximum permitted holdback window to prevent accidental or malicious
+    /// configuration from making release timelines impractically long.
+    pub const MAX_HOLDBACK_WINDOW_SECONDS: u64 = 365 * 24 * 60 * 60; // 1 year
 }
 
 fn require_admin(env: &Env, caller: &Address) {
@@ -1980,7 +1983,9 @@ impl EscrowContract {
     pub fn set_holdback_window(env: Env, admin: Address, new_window_seconds: u64) {
         admin.require_auth();
         require_admin(&env, &admin);
-        if new_window_seconds < constants::MIN_HOLDBACK_WINDOW_SECONDS {
+        if new_window_seconds < constants::MIN_HOLDBACK_WINDOW_SECONDS
+            || new_window_seconds > constants::MAX_HOLDBACK_WINDOW_SECONDS
+        {
             panic_with_error!(&env, EscrowError::InvalidState);
         }
         env.storage()
