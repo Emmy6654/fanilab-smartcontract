@@ -893,7 +893,15 @@ impl DisputeResolutionContract {
         // sender_amount > record.amount, draining the protocol's pooled
         // balance into the sender address. Fail fast in the dispute contract
         // so the escrow state is never touched when the input is invalid.
-        if sender_share_bps > 10000 {
+        //
+        // The endpoints 0 and 10000 are rejected as well: a 0% sender share
+        // pays everything to the driver (identical to
+        // `resolve_dispute_pay_driver`) and a 100% sender share refunds
+        // everything to the sender (identical to
+        // `resolve_dispute_refund_sender`), yet routing them through split
+        // would still apply the split reputation penalty to the driver.
+        // Callers must use the dedicated entry point for those outcomes.
+        if sender_share_bps == 0 || sender_share_bps >= 10000 {
             panic_with_error!(&env, FaniLabError::InvalidState);
         }
 

@@ -2417,3 +2417,45 @@ fn test_get_dispute_count_increments_for_each_raised_dispute() {
     assert_eq!(dispute_client.get_dispute_count(), 2);
 }
 
+// ── Issue #473 — sender_share_bps endpoint validation ────────────────────────
+
+/// A split must be a genuine split: 0% duplicates `resolve_dispute_pay_driver`
+/// and 100% duplicates `resolve_dispute_refund_sender`, yet routing either
+/// through split would still apply the split reputation penalty to the driver.
+/// Both endpoints (and anything above 10000) must be rejected with
+/// `InvalidState` before any state mutation, while a genuine split still works.
+#[test]
+fn test_split_funds_rejects_sender_share_endpoints() {
+    let (_env, admin, sender, recipient, driver, delivery_id, escrow_id, dispute_client) =
+        setup_test();
+
+    raise_mock_dispute(
+        &sender,
+        &recipient,
+        &driver,
+        &delivery_id,
+        &escrow_id,
+        &dispute_client,
+        did(1),
+    );
+
+    for &bps in &[0u32, 10000, 10001] {
+        let result = dispute_client.try_resolve_dispute_split_funds(&admin, &did(1), &bps);
+        match result {
+            Err(Ok(err)) => assert_eq!(err, FaniLabError::InvalidState.into()),
+            other => panic!("expected InvalidState for sender_share_bps={bps}, got {other:?}"),
+        }
+        // Rejected before any state mutation: the dispute is still Open.
+        assert_eq!(
+            dispute_client.get_dispute(&did(1)).status,
+            DisputeStatus::Open
+        );
+    }
+
+    // A genuine split within the exclusive range still succeeds.
+    dispute_client.resolve_dispute_split_funds(&admin, &did(1), &6000);
+    assert_eq!(
+        dispute_client.get_dispute(&did(1)).status,
+        DisputeStatus::Split
+    );
+}
