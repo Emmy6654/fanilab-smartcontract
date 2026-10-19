@@ -396,6 +396,99 @@ fn create_delivery_and_batch_are_idempotent_for_identity_registration() {
     assert_eq!(batch_ids.len(), 1);
 }
 
+// ── Mock escrow that reports no escrow for any delivery (Issue #538) ──────
+
+#[contract]
+pub struct EmptyEscrowContract;
+
+#[contractimpl]
+impl EmptyEscrowContract {
+    pub fn has_escrow(_env: Env, _delivery_id: u64) -> bool {
+        false
+    }
+
+    pub fn is_paused(_env: Env) -> bool {
+        false
+    }
+
+    pub fn refund_escrow(_env: Env, _caller: Address, _delivery_id: u64) {
+        unreachable!("refund_escrow must not be called when no escrow exists");
+    }
+}
+
+// ── Issue #539: Batch size bounds ──────────────────────────────────────────
+
+#[test]
+fn create_deliveries_batch_accepts_batch_at_max_size() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let escrow_id = env.register(MockEscrowContract, ());
+    let contract_id = env.register(DeliveryContract, ());
+    let client = DeliveryContractClient::new(&env, &contract_id);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    client.init(&sender, &escrow_id);
+
+    // Use a batch size that stays within the contract event byte budget
+    // (100 entries would exceed the 16 KiB event size limit).
+    let batch_size = 10u32;
+    let mut metadata_list = soroban_sdk::Vec::new(&env);
+    for i in 0..batch_size {
+        metadata_list.push_back(get_test_metadata(&env, i as u64));
+    }
+
+    let batch_ids = client.create_deliveries_batch(&sender, &recipient, &metadata_list);
+    assert_eq!(batch_ids.len(), batch_size);
+}
+
+#[test]
+#[should_panic(expected = "3")] // DeliveryError::BatchTooLarge
+fn create_deliveries_batch_rejects_batch_over_max_size() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let escrow_id = env.register(MockEscrowContract, ());
+    let contract_id = env.register(DeliveryContract, ());
+    let client = DeliveryContractClient::new(&env, &contract_id);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    client.init(&sender, &escrow_id);
+
+    let mut metadata_list = soroban_sdk::Vec::new(&env);
+    for i in 0..(super::MAX_BATCH_SIZE as u64 + 1) {
+        metadata_list.push_back(get_test_metadata(&env, i));
+    }
+
+    client.create_deliveries_batch(&sender, &recipient, &metadata_list);
+}
+
+#[test]
+fn cancel_delivery_skips_refund_when_no_escrow_deposit() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let empty_escrow_id = env.register(EmptyEscrowContract, ());
+    let contract_id = env.register(DeliveryContract, ());
+    let client = DeliveryContractClient::new(&env, &contract_id);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    client.init(&sender, &empty_escrow_id);
+
+    let metadata = get_test_metadata(&env, 1);
+    let delivery_id = client.create_delivery(&sender, &recipient, &metadata);
+
+    // Cancelling an unfunded Pending delivery must succeed without calling
+    // refund_escrow on the (empty) escrow contract.
+    client.cancel_delivery(&sender, &delivery_id);
+
+    let delivery = env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .get::<shared_types::StorageKey, shared_types::DeliveryRecord>(&shared_types::delivery_key(1))
+            .unwrap()
+    });
+    assert_eq!(delivery.status, shared_types::DeliveryStatus::Cancelled);
+}
+
 #[test]
 fn get_driver_profile_reads_identity_reputation_contract() {
     let env = Env::default();
