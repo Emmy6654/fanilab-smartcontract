@@ -1,6 +1,8 @@
 #![no_std]
 
-use shared_types::{FaniLabError, StorageKey};
+use shared_types::{
+    DriverPreferenceUpdatedEvent, EscrowContractUpdatedEvent, FaniLabError, StorageKey,
+};
 
 // Settlement contract for cross-border currency swaps
 // This contract will handle currency conversions between different assets
@@ -56,14 +58,59 @@ impl SettlementContract {
             .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::NotInitialized))
     }
 
+    /// Update the escrow contract address. Admin only.
+    ///
+    /// Emits `escrow_contract_updated` so off-chain indexers can track
+    /// escrow rotations (Issue #588).
+    pub fn set_escrow_contract(env: Env, admin: Address, new_escrow: Address) {
+        admin.require_auth();
+        let stored_admin = env
+            .storage()
+            .instance()
+            .get(&StorageKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::NotInitialized));
+        if admin != stored_admin {
+            panic_with_error!(&env, FaniLabError::Unauthorized);
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::EscrowContract, &new_escrow);
+        env.storage()
+            .instance()
+            .extend_ttl(shared_types::ttl::LEDGER_TTL_THRESHOLD, shared_types::ttl::LEDGER_TTL_EXTEND_TO);
+
+        env.events().publish(
+            (shared_types::events::escrow_contract_updated(&env),),
+            EscrowContractUpdatedEvent {
+                admin,
+                new_escrow,
+            },
+        );
+    }
+
+    /// Get the configured escrow contract address.
+    pub fn get_escrow_contract(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .extend_ttl(shared_types::ttl::LEDGER_TTL_THRESHOLD, shared_types::ttl::LEDGER_TTL_EXTEND_TO);
+        env.storage()
+            .instance()
+            .get(&DataKey::EscrowContract)
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::NotInitialized))
+    }
+
     /// Record the asset a driver wants to be paid in.
     ///
     /// Any driver may set (or overwrite) their own preference; the caller must
     /// authenticate as the driver. Stored in persistent storage so the entry
     /// survives independently of the contract's instance entry, and its TTL is
     /// extended on every write (Issue #459).
+    ///
+    /// Emits `driver_preference_updated` so indexers can track preference
+    /// changes (Issue #589).
     pub fn set_driver_preference(env: Env, driver: Address, to_token: Address) {
         driver.require_auth();
+        let driver_clone = driver.clone();
 
         let key = DataKey::DriverPreference(driver);
         env.storage().persistent().set(&key, &to_token);
@@ -71,6 +118,37 @@ impl SettlementContract {
             &key,
             shared_types::ttl::LEDGER_TTL_THRESHOLD,
             shared_types::ttl::LEDGER_TTL_EXTEND_TO,
+        );
+
+        env.events().publish(
+            (shared_types::events::driver_preference_updated(&env),),
+            DriverPreferenceUpdatedEvent {
+                driver: driver_clone,
+                target_token: to_token,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+    }
+
+    /// Clear a driver's custom payout preference, routing settlements through
+    /// the default native escrow token instead.
+    ///
+    /// Any driver may clear their own preference; the caller must authenticate
+    /// as the driver (Issue #589).
+    pub fn clear_driver_preference(env: Env, driver: Address) {
+        driver.require_auth();
+        let driver_clone = driver.clone();
+
+        let key = DataKey::DriverPreference(driver);
+        env.storage().persistent().remove(&key);
+
+        env.events().publish(
+            (shared_types::events::driver_preference_updated(&env),),
+            DriverPreferenceUpdatedEvent {
+                driver: driver_clone.clone(),
+                target_token: driver_clone, // cleared → default routing
+                timestamp: env.ledger().timestamp(),
+            },
         );
     }
 

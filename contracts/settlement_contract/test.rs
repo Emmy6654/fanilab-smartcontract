@@ -90,3 +90,63 @@ fn test_set_driver_preference_requires_driver_auth() {
 
     assert_eq!(client.get_driver_preference(&driver), None);
 }
+
+/// Issue #588: set_escrow_contract requires admin auth and updates the escrow
+/// address; get_escrow_contract reads it back.
+#[test]
+fn test_set_and_get_escrow_contract() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, SettlementContract);
+    let client = SettlementContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let new_escrow = Address::generate(&env);
+
+    // Initialize first so there is an admin.
+    client.init(&admin, &new_escrow);
+
+    // get_escrow_contract returns the address set at init.
+    assert_eq!(client.get_escrow_contract(), new_escrow);
+
+    // Update to a new escrow address.
+    let newer_escrow = Address::generate(&env);
+    client.set_escrow_contract(&admin, &newer_escrow);
+    assert_eq!(client.get_escrow_contract(), newer_escrow);
+}
+
+/// Issue #588: set_escrow_contract is restricted to admin.
+#[test]
+fn test_set_escrow_contract_requires_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, SettlementContract);
+    let client = SettlementContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    let new_escrow = Address::generate(&env);
+
+    client.init(&admin, &new_escrow);
+
+    let result = client.try_set_escrow_contract(&non_admin, &new_escrow);
+    assert!(result.is_err());
+}
+
+/// Issue #589: clear_driver_preference removes the preference.
+#[test]
+fn test_clear_driver_preference_removes() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, SettlementContract);
+    let client = SettlementContractClient::new(&env, &contract_id);
+
+    let driver = Address::generate(&env);
+    let to_token = Address::generate(&env);
+
+    client.set_driver_preference(&driver, &to_token);
+    assert_eq!(client.get_driver_preference(&driver), Some(to_token.clone()));
+
+    client.clear_driver_preference(&driver);
+    assert_eq!(client.get_driver_preference(&driver), None);
+}
