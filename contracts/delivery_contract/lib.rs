@@ -215,6 +215,7 @@ impl DeliveryContract {
         );
     }
 
+    #[allow(deprecated)] // events().publish() is deprecated in SDK 28 but remains functional
     pub fn set_identity_reputation_contract(env: Env, admin: Address, identity_contract: Address) {
         admin.require_auth();
         let stored_admin: Address = env
@@ -228,6 +229,13 @@ impl DeliveryContract {
         env.storage()
             .instance()
             .set(&DataKey::IdentityReputationContract, &identity_contract);
+        env.storage()
+            .instance()
+            .extend_ttl(ttl::LEDGER_TTL_THRESHOLD, ttl::LEDGER_TTL_EXTEND_TO);
+        env.events().publish(
+            (events::identity_reputation_contract_updated(&env),),
+            (admin, identity_contract),
+        );
     }
 
     /// Configure the `dispute_resolution_contract` that is the only caller

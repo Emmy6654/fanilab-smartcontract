@@ -2329,6 +2329,27 @@ fn test_set_and_get_identity_reputation_contract_round_trip() {
 }
 
 #[test]
+fn test_set_identity_reputation_contract_emits_audit_event() {
+    let env = Env::default();
+    let (client, admin) = setup_bare(&env);
+    let identity_contract = Address::generate(&env);
+
+    client.set_identity_reputation_contract(&admin, &identity_contract);
+
+    let events = env.events().all();
+    let raw_event = events.events().last().expect("no event emitted");
+    let xdr::ContractEventBody::V0(body) = raw_event.body.clone();
+    let topic = Symbol::try_from_val(&env, &body.topics.get(0).unwrap()).unwrap();
+    let data = Val::try_from_val(&env, &body.data).unwrap();
+    let (event_admin, event_identity): (Address, Address) =
+        <(Address, Address)>::try_from_val(&env, &data).unwrap();
+
+    assert_eq!(topic, events::identity_reputation_contract_updated(&env));
+    assert_eq!(event_admin, admin);
+    assert_eq!(event_identity, identity_contract);
+}
+
+#[test]
 fn test_index_contents_unchanged_after_delivery_completion() {
     let env = Env::default();
     let (client, shipper, driver, recipient, _escrow_id, _admin) = setup_full(&env);
@@ -2790,4 +2811,3 @@ fn test_assign_driver_succeeds_registered_active_driver() {
         DeliveryStatus::Active
     );
 }
-
