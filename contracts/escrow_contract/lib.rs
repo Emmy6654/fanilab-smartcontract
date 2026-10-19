@@ -2193,6 +2193,11 @@ impl EscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::VolumeTiers, &tiers);
+        env.storage().persistent().extend_ttl(
+            &DataKey::VolumeTiers,
+            ttl::LEDGER_TTL_THRESHOLD,
+            ttl::LEDGER_TTL_EXTEND_TO,
+        );
         env.events().publish(
             (Symbol::new(&env, "volume_tiers_updated"),),
             (admin, tiers.len()),

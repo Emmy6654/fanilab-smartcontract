@@ -6630,6 +6630,24 @@ fn default_persistent_ttl(env: &Env, contract_id: &Address) -> u32 {
 }
 
 #[test]
+fn test_volume_tiers_ttl_is_extended() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    client.init(&admin, &token, &0);
+    client.set_volume_tiers(&admin, &soroban_sdk::Vec::new(&env));
+
+    let ttl = env.as_contract(&contract_id, || {
+        env.storage().persistent().get_ttl(&DataKey::VolumeTiers)
+    });
+    assert_eq!(ttl, EXPECTED_VOLUME_TTL);
+    assert!(ttl > default_persistent_ttl(&env, &contract_id));
+}
+
+#[test]
 fn test_sender_volume_ttl_extended_on_release_escrow() {
     let (env, contract_id) = setup_env();
     let client = EscrowContractClient::new(&env, &contract_id);
