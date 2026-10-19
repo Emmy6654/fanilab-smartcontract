@@ -9,6 +9,7 @@ import {
   xdr,
 } from '@stellar/stellar-sdk';
 import { ContractInvokeOptions } from '../types/common.types';
+import { formatSorobanError } from './error-codes';
 
 export type ScVal = xdr.ScVal;
 
@@ -91,7 +92,7 @@ export class ContractInvoker {
     if (!config.signer) {
       const simulation = await server.simulateTransaction(transaction);
       if (SorobanRpc.Api.isSimulationError(simulation)) {
-        throw new Error(`Soroban simulation failed: ${simulation.error}`);
+        throw new Error(formatSorobanError('Soroban simulation failed', simulation.error));
       }
       return simulation.result?.retval ? native(simulation.result.retval) : undefined;
     }
@@ -99,7 +100,12 @@ export class ContractInvoker {
     prepared.sign(config.signer);
     const submitted = await server.sendTransaction(prepared);
     if (submitted.status === 'ERROR') {
-      throw new Error(`Soroban submission failed: ${submitted.errorResult?.toString() ?? 'unknown error'}`);
+      throw new Error(
+        formatSorobanError(
+          'Soroban submission failed',
+          submitted.errorResult?.toString() ?? 'unknown error'
+        )
+      );
     }
     if (submitted.status === 'PENDING') {
       return this.waitForResult(server, submitted.hash);
@@ -114,7 +120,18 @@ export class ContractInvoker {
         return result.returnValue ? native(result.returnValue) : undefined;
       }
       if (result.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-        throw new Error(`Soroban transaction failed: ${hash}`);
+        const errorCodes = result.diagnosticEventsXdr?.flatMap(({ event }) => {
+          const value = event.body.value.data;
+          return value.type === 'scvError' && value.error.type === 'sceContract'
+            ? [value.error.contractCode]
+            : [];
+        });
+        const failure = errorCodes?.length
+          ? `Error(Contract, #${errorCodes.join(', #')})`
+          : hash;
+        throw new Error(
+          formatSorobanError('Soroban transaction failed', failure, errorCodes ?? [])
+        );
       }
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
