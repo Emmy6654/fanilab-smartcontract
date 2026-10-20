@@ -23,6 +23,7 @@ The protocol supports on-chain secondary indexes to enable efficient queries wit
 Secondary indexes are maintained alongside primary records in persistent storage for:
 - **Deliveries by Sender** — all delivery IDs initiated by a given sender
 - **Deliveries by Recipient** — all delivery IDs with a given recipient
+- **Deliveries by Driver** — all delivery IDs assigned to a given driver
 - **Escrows by Sender** — all escrow delivery IDs initiated by a given sender
 - **Escrows by Recipient** — all escrow delivery IDs for a given recipient
 - **Escrows by Driver** — all escrow delivery IDs assigned to a given driver
@@ -35,14 +36,29 @@ These indexes are automatically maintained by the respective contracts and are b
 **Delivery Contract:**
 - `get_deliveries_by_sender(sender: Address) -> Vec<DeliveryId>` — all deliveries by sender
 - `get_deliveries_by_recipient(recipient: Address) -> Vec<DeliveryId>` — all deliveries to recipient
+- `get_deliveries_by_driver(driver: Address) -> Vec<DeliveryId>` — all deliveries assigned to a driver
+- `get_deliveries_page(owner: Address, kind: u32, offset: u32, limit: u32) -> Vec<DeliveryId>` — a page from a delivery index
 
 **Escrow Contract:**
 - `get_escrows_by_sender(sender: Address) -> Vec<u64>` — all escrow delivery IDs by sender
 - `get_escrows_by_recipient(recipient: Address) -> Vec<u64>` — all escrow delivery IDs for recipient
 - `get_escrows_by_driver(driver: Address) -> Vec<u64>` — all escrow delivery IDs for driver
+- `get_escrows_page(owner: Address, kind: u32, offset: u32, limit: u32) -> Vec<u64>` — a page from an escrow index
 
 **Fleet Management Contract:**
 - `get_fleet_roster(fleet_id: FleetId, offset: u32, limit: u32) -> Vec<Address>` — a page of active drivers in a fleet (limit clamped to 100)
+
+### Pagination Guidelines
+
+Use `get_deliveries_page` and `get_escrows_page` to retrieve indexes larger
+than one page. Both accept a zero-based `offset` and a `limit` that is clamped
+to 100; request subsequent pages by increasing the offset by the number of
+records returned (for example, offsets 0, 100, 200 with a limit of 100).
+`kind` selects the index: `0` = sender, `1` = recipient, and `2` = driver.
+An unknown owner or offset beyond the end returns an empty vector. The
+non-paginated sender/recipient/driver getters are convenient for small indexes
+but return at most the first 100 records; use the page methods to enumerate
+larger indexes.
 
 ### Interim: Event-Replay Indexing
 
@@ -124,7 +140,9 @@ escrow_contract.update_platform_fee(
 ```
 
 #### `propose_admin`
-Initiate admin transfer to a new address.
+Initiate admin transfer to a new address. The current admin can cancel a
+pending nomination with `cancel_admin_proposal` before the proposed admin
+accepts. This emits `admin_proposed` with `(current_admin, new_admin)`.
 
 **Parameters:**
 - `current_admin: Address` - Current admin address
@@ -138,6 +156,25 @@ escrow_contract.propose_admin(
     &current_admin,
     &new_admin_address
 );
+```
+
+#### `cancel_admin_proposal`
+Cancel the pending admin nomination. Only the current admin may cancel, and a
+proposal must be pending. Emits `admin_proposal_cancelled` with
+`(current_admin, cancelled_admin)`.
+
+**Parameters:**
+- `current_admin: Address` - Current admin address
+
+**Authorization:** Current admin
+
+**Errors:**
+- `Unauthorized` - Caller is not the current admin
+- `InvalidState` - No admin proposal is pending
+
+**Example:**
+```rust
+escrow_contract.cancel_admin_proposal(&current_admin);
 ```
 
 #### `accept_admin`
@@ -724,20 +761,22 @@ escrow_contract.release_expired_holdback(&delivery_id);
 Admin-only configuration: set the holdback window (in seconds) that must elapse
 before `release_expired_holdback` may be called.
 
-The window must be at least `MIN_HOLDBACK_WINDOW_SECONDS` (86 400 s = 1 day) to
-guarantee the recipient has a realistic opportunity to either release the escrow or
-raise a dispute before the driver can claim it unilaterally. The default when no
-value has been set is `DEFAULT_HOLDBACK_WINDOW_SECONDS` (259 200 s = 3 days).
+The window must be between `MIN_HOLDBACK_WINDOW_SECONDS` (86 400 s = 1 day) and
+`MAX_HOLDBACK_WINDOW_SECONDS` (31 536 000 s = 1 year), inclusive. The minimum
+guarantees the recipient has a realistic opportunity to either release the escrow
+or raise a dispute before the driver can claim it unilaterally; the maximum
+prevents impractically long release timelines. The default when no value has
+been set is `DEFAULT_HOLDBACK_WINDOW_SECONDS` (259 200 s = 3 days).
 
 **Parameters:**
 - `admin: Address` - Admin address (must sign)
-- `new_window_seconds: u64` - New holdback window in seconds (must be ≥ 86 400)
+- `new_window_seconds: u64` - New holdback window in seconds (must be between 86 400 and 31 536 000, inclusive)
 
 **Authorization:** Admin only
 
 **Errors:**
 - `Unauthorized` - Caller is not the stored admin
-- `InvalidState` - `new_window_seconds` is below `MIN_HOLDBACK_WINDOW_SECONDS` (86 400 s)
+- `InvalidState` - `new_window_seconds` is outside the permitted range of 86 400–31 536 000 seconds
 
 **Events:** `holdback_window_updated`
 
@@ -1096,6 +1135,8 @@ Create a new delivery request.
 
 **Returns:** `DeliveryId`
 
+**Validation:** `origin` and `destination` must each contain 2–256 bytes.
+
 **Events:** `delivery_created`
 
 **State Changes:**
@@ -1425,7 +1466,8 @@ Update a delivery's metadata while it is still `Pending` and only by the origina
 **Errors:**
 - `Unauthorized` - Caller is not the sender
 - `InvalidState` - Delivery is not `Pending`
-- `InvalidMetadata` - The replacement metadata fails validation
+- `InvalidMetadata` - The replacement metadata fails validation, including when
+  `origin` or `destination` is shorter than 2 bytes or longer than 256 bytes
 - `DeliveryNotFound` - No delivery exists for this ID
 
 **Events:** `delivery_metadata_updated`
