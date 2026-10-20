@@ -1500,6 +1500,28 @@ fn test_accept_minimum_valid_weight() {
 
 #[test]
 #[should_panic(expected = "2")] // DeliveryError::InvalidMetadata
+fn test_create_delivery_rejects_single_character_origin() {
+    let env = Env::default();
+    let (client, shipper, _, recipient, _, _) = setup_full(&env);
+    let mut metadata = get_test_metadata(&env, 1);
+    metadata.origin = String::from_str(&env, "a");
+
+    client.create_delivery(&shipper, &recipient, &metadata);
+}
+
+#[test]
+#[should_panic(expected = "2")] // DeliveryError::InvalidMetadata
+fn test_create_delivery_rejects_single_character_destination() {
+    let env = Env::default();
+    let (client, shipper, _, recipient, _, _) = setup_full(&env);
+    let mut metadata = get_test_metadata(&env, 1);
+    metadata.destination = String::from_str(&env, "a");
+
+    client.create_delivery(&shipper, &recipient, &metadata);
+}
+
+#[test]
+#[should_panic(expected = "2")] // DeliveryError::InvalidMetadata
 fn test_batch_rejects_invalid_metadata() {
     let env = Env::default();
     let (client, shipper, _, recipient, _, _) = setup_full(&env);
@@ -2429,6 +2451,27 @@ fn test_set_and_get_identity_reputation_contract_round_trip() {
         client.get_identity_reputation_contract(),
         Some(identity_contract)
     );
+}
+
+#[test]
+fn test_set_identity_reputation_contract_emits_audit_event() {
+    let env = Env::default();
+    let (client, admin) = setup_bare(&env);
+    let identity_contract = Address::generate(&env);
+
+    client.set_identity_reputation_contract(&admin, &identity_contract);
+
+    let events = env.events().all();
+    let raw_event = events.events().last().expect("no event emitted");
+    let xdr::ContractEventBody::V0(body) = raw_event.body.clone();
+    let topic = Symbol::try_from_val(&env, &body.topics.get(0).unwrap()).unwrap();
+    let data = Val::try_from_val(&env, &body.data).unwrap();
+    let (event_admin, event_identity): (Address, Address) =
+        <(Address, Address)>::try_from_val(&env, &data).unwrap();
+
+    assert_eq!(topic, events::identity_reputation_contract_updated(&env));
+    assert_eq!(event_admin, admin);
+    assert_eq!(event_identity, identity_contract);
 }
 
 #[test]

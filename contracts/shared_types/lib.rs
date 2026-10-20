@@ -201,6 +201,10 @@ pub mod events {
         Symbol::new(env, "delivery_contract_updated")
     }
 
+    pub fn identity_reputation_contract_updated(env: &Env) -> Symbol {
+        Symbol::new(env, "identity_reputation_contract_updated")
+    }
+
     pub fn dispute_contract_updated(env: &Env) -> Symbol {
         Symbol::new(env, "dispute_contract_updated")
     }
@@ -251,6 +255,14 @@ pub mod events {
 
     pub fn admin_transferred(env: &Env) -> Symbol {
         Symbol::new(env, "admin_transferred")
+    }
+
+    pub fn admin_proposed(env: &Env) -> Symbol {
+        Symbol::new(env, "admin_proposed")
+    }
+
+    pub fn admin_proposal_cancelled(env: &Env) -> Symbol {
+        Symbol::new(env, "admin_proposal_cancelled")
     }
 
     pub fn protocol_pause_status_changed(env: &Env) -> Symbol {

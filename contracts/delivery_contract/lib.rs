@@ -128,6 +128,7 @@ pub enum DeliveryError {
 }
 
 mod constants {
+    pub const MIN_LOCATION_LEN: u32 = 2;
     pub const MAX_LOCATION_LEN: u32 = 256;
     pub const MAX_WEIGHT_GRAMS: u32 = 1_000_000;
 }
@@ -172,10 +173,14 @@ fn validate_delivery_metadata(
     _env: &Env,
     metadata: &DeliveryMetadata,
 ) -> Result<(), DeliveryError> {
-    if metadata.origin.is_empty() || metadata.origin.len() > constants::MAX_LOCATION_LEN {
+    if metadata.origin.len() < constants::MIN_LOCATION_LEN
+        || metadata.origin.len() > constants::MAX_LOCATION_LEN
+    {
         return Err(DeliveryError::InvalidMetadata);
     }
-    if metadata.destination.is_empty() || metadata.destination.len() > constants::MAX_LOCATION_LEN {
+    if metadata.destination.len() < constants::MIN_LOCATION_LEN
+        || metadata.destination.len() > constants::MAX_LOCATION_LEN
+    {
         return Err(DeliveryError::InvalidMetadata);
     }
     if metadata.origin == metadata.destination {
@@ -219,6 +224,7 @@ impl DeliveryContract {
         );
     }
 
+    #[allow(deprecated)] // events().publish() is deprecated in SDK 28 but remains functional
     pub fn set_identity_reputation_contract(env: Env, admin: Address, identity_contract: Address) {
         admin.require_auth();
         let stored_admin: Address = env
@@ -235,6 +241,10 @@ impl DeliveryContract {
         env.storage()
             .instance()
             .extend_ttl(ttl::LEDGER_TTL_THRESHOLD, ttl::LEDGER_TTL_EXTEND_TO);
+        env.events().publish(
+            (events::identity_reputation_contract_updated(&env),),
+            (admin, identity_contract),
+        );
     }
 
     /// Configure the `dispute_resolution_contract` that is the only caller

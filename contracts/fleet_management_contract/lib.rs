@@ -301,6 +301,9 @@ impl FleetManagementContract {
         env.storage().instance().extend_ttl(ttl::LEDGER_TTL_THRESHOLD, ttl::LEDGER_TTL_EXTEND_TO);
         owner.require_auth();
         require_escrow_not_paused(&env);
+        if owner == treasury {
+            panic_with_error!(&env, FleetError::InvalidConfiguration);
+        }
 
         // Bump and persist the fleet counter.
         let counter_key = DataKey::FleetCounter;
@@ -434,6 +437,7 @@ impl FleetManagementContract {
     /// fleet treasury.
     #[allow(deprecated)] // events().publish() is deprecated in SDK 27.0.0 but still functional; tracked in SOROBAN_SDK_27_MIGRATION.md#event-system-migration (Issue #114)
     pub fn reactivate_fleet(env: Env, caller: Address, fleet_id: u64) {
+        env.storage().instance().extend_ttl(ttl::LEDGER_TTL_THRESHOLD, ttl::LEDGER_TTL_EXTEND_TO);
         caller.require_auth();
         require_escrow_not_paused(&env);
 
@@ -503,6 +507,10 @@ impl FleetManagementContract {
             .persistent()
             .get(&fleet_key)
             .unwrap_or_else(|| panic_with_error!(&env, FleetError::FleetNotFound));
+
+        if new_owner == profile.treasury {
+            panic_with_error!(&env, FleetError::InvalidConfiguration);
+        }
 
         let old_owner = profile.owner.clone();
 
@@ -579,6 +587,10 @@ impl FleetManagementContract {
             .get(&fleet_key)
             .unwrap_or_else(|| panic_with_error!(&env, FleetError::FleetNotFound));
 
+        if new_treasury == profile.owner || new_treasury == profile.treasury {
+            panic_with_error!(&env, FleetError::InvalidConfiguration);
+        }
+
         let old_treasury = profile.treasury.clone();
         profile.treasury = new_treasury.clone();
 
@@ -636,6 +648,10 @@ impl FleetManagementContract {
             .persistent()
             .get(&DataKey::Fleet(fleet_id))
             .unwrap_or_else(|| panic_with_error!(&env, FleetError::FleetNotFound));
+
+        if treasury == profile.owner || treasury == profile.treasury {
+            panic_with_error!(&env, FleetError::InvalidConfiguration);
+        }
 
         require_signer_threshold(&env, &profile, &owner, &co_signers);
 
@@ -700,6 +716,10 @@ impl FleetManagementContract {
             .get(&DataKey::Fleet(fleet_id))
             .unwrap_or_else(|| panic_with_error!(&env, FleetError::FleetNotFound));
 
+        if pending.treasury == profile.owner || pending.treasury == profile.treasury {
+            panic_with_error!(&env, FleetError::InvalidConfiguration);
+        }
+
         // A deactivated fleet's core configuration is frozen: a pending
         // treasury redirect proposed while the fleet was active must not be
         // applied once the fleet has been shut down (Issue #467).
@@ -743,6 +763,8 @@ impl FleetManagementContract {
     ///
     /// `caller` must be an authorized signer and must sign the transaction.
     /// Stores a `Pending` invite for `driver` under this fleet.
+    /// If an identity contract is configured, the driver must already be
+    /// registered there before an invitation can be issued.
     /// The driver must later call `accept_fleet_invite` to become active.
     /// `co_signers` supplies any additional signer authorizations needed to
     /// satisfy the fleet's `signature_threshold` beyond `caller` alone — pass
@@ -770,6 +792,7 @@ impl FleetManagementContract {
         }
 
         require_signer_threshold(&env, &profile, &caller, &co_signers);
+        require_registered_driver(&env, &driver);
 
         let invite_key = DataKey::DriverFleet(fleet_id, driver.clone());
 
@@ -974,7 +997,10 @@ impl FleetManagementContract {
     /// `co_signers` supplies any additional signer authorizations needed to
     /// satisfy the fleet's `signature_threshold` beyond `caller` alone — pass
     /// an empty vec for a threshold-1 fleet (the common case) or when the
-    /// driver is removing themselves (no signer threshold applies).
+    /// driver is removing themselves (no authorization threshold applies).
+    /// A self-removing driver is also removed from the signer set; this
+    /// operation is rejected if that would leave fewer signers than the
+    /// configured threshold.
     #[allow(deprecated)] // events().publish() is deprecated in SDK 27.0.0 but still functional; tracked in SOROBAN_SDK_27_MIGRATION.md#event-system-migration (Issue #114)
     pub fn remove_driver_from_fleet(
         env: Env,
@@ -1008,17 +1034,32 @@ impl FleetManagementContract {
             .get(&invite_key)
             .unwrap_or_else(|| panic_with_error!(&env, FleetError::InviteNotFound));
 
+        let mut profile_changed = false;
+        if is_driver && profile.signers.contains(&driver) {
+            let remaining_signer_count = profile.signers.len() - 1;
+            if remaining_signer_count < profile.signature_threshold {
+                panic_with_error!(&env, FleetError::InvalidConfiguration);
+            }
+
+            let mut remaining_signers = soroban_sdk::Vec::new(&env);
+            for signer in profile.signers.iter() {
+                if signer != driver {
+                    remaining_signers.push_back(signer);
+                }
+            }
+            profile.signers = remaining_signers;
+            profile_changed = true;
+        }
+
         // Decrement active driver count only when the driver was active.
         if status == DriverFleetStatus::Active && profile.total_active_drivers > 0 {
             profile.total_active_drivers -= 1;
+            profile_changed = true;
+        }
+
+        if profile_changed {
             let fleet_key = DataKey::Fleet(fleet_id);
             env.storage().persistent().set(&fleet_key, &profile);
-            // Issue #436: this branch rewrites the fleet profile but was the
-            // only `DataKey::Fleet` mutation in the contract that skipped the
-            // `extend_ttl` call, leaving the fleet's active profile TTL
-            // drifting out of sync with its mutation cycle and risking
-            // premature expiration. Every other `fleet_key` writer pairs its
-            // `set` with this extension; do the same here.
             env.storage().persistent().extend_ttl(
                 &fleet_key,
                 ttl::LEDGER_TTL_THRESHOLD,
@@ -1113,8 +1154,13 @@ impl FleetManagementContract {
                     .get(&DataKey::Fleet(fleet_id));
                 match profile {
                     Some(profile) if profile.active => profile.treasury,
-                    Some(_) => driver,
-                    None => {
+                    // An inactive fleet and a missing fleet profile both fall
+                    // back to the driver's own address — publish the
+                    // routing-fallback event in both cases so off-chain
+                    // monitors can observe the downgrade.  Previously an
+                    // inactive fleet fell back silently, hiding the routing
+                    // change from event consumers.
+                    Some(_) | None => {
                         env.events().publish(
                             (events::payout_routing_fallback(&env),),
                             PayoutRoutingFallbackEvent {

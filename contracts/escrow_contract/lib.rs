@@ -25,6 +25,7 @@ pub mod constants {
     pub const MAX_BATCH_SIZE: u32 = 100;
     pub const DEFAULT_ESCROW_EXPIRY_SECONDS: u64 = 30 * 24 * 60 * 60; // 30 days
     pub const MAX_PLATFORM_FEE_BPS: u32 = 1000;
+    pub const MAX_SLIPPAGE_TOLERANCE_BPS: u32 = 1000;
     pub const SETTLEMENT_CONTRACT_TIMELOCK_SECONDS: u64 = 3 * 24 * 60 * 60; // 3 days
     /// Default time a recipient has, after confirming delivery (i.e. after
     /// `mark_holdback_escrow` moves an escrow into `Holdback`), to either
@@ -39,6 +40,9 @@ pub mod constants {
     /// recipient's realistic opportunity to release or dispute the escrow
     /// before the driver can claim it unilaterally.
     pub const MIN_HOLDBACK_WINDOW_SECONDS: u64 = 24 * 60 * 60; // 1 day
+    /// Maximum permitted holdback window to prevent accidental or malicious
+    /// configuration from making release timelines impractically long.
+    pub const MAX_HOLDBACK_WINDOW_SECONDS: u64 = 365 * 24 * 60 * 60; // 1 year
 }
 
 fn require_admin(env: &Env, caller: &Address) {
@@ -590,6 +594,7 @@ pub enum EscrowError {
     InvalidParties = 11,
     /// A batch operation (`create_escrows_batch`) exceeded `MAX_BATCH_SIZE`.
     BatchTooLarge = 12,
+    InvalidSlippageTolerance = 13,
 }
 
 #[contracttype]
@@ -746,8 +751,8 @@ impl EscrowContract {
             panic_with_error!(&env, FaniLabError::Unauthorized);
         }
         admin.require_auth();
-        if new_slippage_bps > 10000 {
-            panic_with_error!(&env, EscrowError::InvalidFee);
+        if new_slippage_bps > constants::MAX_SLIPPAGE_TOLERANCE_BPS {
+            panic_with_error!(&env, EscrowError::InvalidSlippageTolerance);
         }
         let mut config = load_protocol_config(&env);
         let old_slippage_bps = config.slippage_tolerance_bps;
@@ -853,6 +858,7 @@ impl EscrowContract {
     }
 
     // Issue #90: allow an admin to unset a previously configured settlement_contract.
+    #[allow(deprecated)] // events().publish() is deprecated in SDK 28 but remains functional
     pub fn clear_settlement_contract(env: Env, admin: Address) {
         admin.require_auth();
         require_admin(&env, &admin);
@@ -863,6 +869,10 @@ impl EscrowContract {
             .instance()
             .remove(&DataKey::PendingSettlementContract);
         extend_instance_ttl(&env);
+        env.events().publish(
+            (Symbol::new(&env, "settlement_contract_cleared"),),
+            (admin, env.ledger().timestamp()),
+        );
     }
 
     pub fn set_fleet_management_contract(env: Env, admin: Address, fleet_contract: Address) {
@@ -894,6 +904,7 @@ impl EscrowContract {
     /// disable the protocol's ability to freeze a suspicious escrow. The
     /// intended remedy for a bad dispute contract is to repoint it with
     /// `set_dispute_resolution_contract`, not to remove the integration.
+    #[allow(deprecated)] // events().publish() is deprecated in SDK 28 but remains functional
     pub fn clear_fleet_management_contract(env: Env, admin: Address) {
         admin.require_auth();
         require_admin(&env, &admin);
@@ -901,6 +912,10 @@ impl EscrowContract {
             .instance()
             .remove(&DataKey::FleetManagementContract);
         extend_instance_ttl(&env);
+        env.events().publish(
+            (Symbol::new(&env, "fleet_management_contract_cleared"),),
+            (admin, env.ledger().timestamp()),
+        );
     }
 
     pub fn set_dispute_resolution_contract(env: Env, admin: Address, dispute_contract: Address) {
@@ -959,6 +974,7 @@ impl EscrowContract {
         get_delivery_contract(&env)
     }
 
+    #[allow(deprecated)] // events().publish() is deprecated in SDK 27.0.0 but still functional; tracked in SOROBAN_SDK_27_MIGRATION.md#event-system-migration (Issue #114)
     pub fn propose_admin(env: Env, current_admin: Address, new_admin: Address) {
         current_admin.require_auth();
         let stored_admin: Address = env
@@ -973,6 +989,32 @@ impl EscrowContract {
             .instance()
             .set(&DataKey::PendingAdmin, &new_admin);
         extend_instance_ttl(&env);
+        env.events()
+            .publish((events::admin_proposed(&env),), (current_admin, new_admin));
+    }
+
+    #[allow(deprecated)] // events().publish() is deprecated in SDK 27.0.0 but still functional; tracked in SOROBAN_SDK_27_MIGRATION.md#event-system-migration (Issue #114)
+    pub fn cancel_admin_proposal(env: Env, current_admin: Address) {
+        current_admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&StorageKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::NotInitialized));
+        if stored_admin != current_admin {
+            panic_with_error!(&env, FaniLabError::Unauthorized);
+        }
+        let pending_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .unwrap_or_else(|| panic_with_error!(&env, FaniLabError::InvalidState));
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        extend_instance_ttl(&env);
+        env.events().publish(
+            (events::admin_proposal_cancelled(&env),),
+            (current_admin, pending_admin),
+        );
     }
 
     #[allow(deprecated)] // events().publish() is deprecated in SDK 27.0.0 but still functional; tracked in SOROBAN_SDK_27_MIGRATION.md#event-system-migration (Issue #114)
@@ -1980,7 +2022,9 @@ impl EscrowContract {
     pub fn set_holdback_window(env: Env, admin: Address, new_window_seconds: u64) {
         admin.require_auth();
         require_admin(&env, &admin);
-        if new_window_seconds < constants::MIN_HOLDBACK_WINDOW_SECONDS {
+        if new_window_seconds < constants::MIN_HOLDBACK_WINDOW_SECONDS
+            || new_window_seconds > constants::MAX_HOLDBACK_WINDOW_SECONDS
+        {
             panic_with_error!(&env, EscrowError::InvalidState);
         }
         env.storage()
@@ -2193,6 +2237,11 @@ impl EscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::VolumeTiers, &tiers);
+        env.storage().persistent().extend_ttl(
+            &DataKey::VolumeTiers,
+            ttl::LEDGER_TTL_THRESHOLD,
+            ttl::LEDGER_TTL_EXTEND_TO,
+        );
         env.events().publish(
             (Symbol::new(&env, "volume_tiers_updated"),),
             (admin, tiers.len()),
