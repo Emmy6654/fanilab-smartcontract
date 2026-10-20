@@ -124,6 +124,7 @@ pub enum DeliveryError {
     /// `Locked` state, at a point where funded escrow is a precondition
     /// (currently: the `Active -> InTransit` transition). See Issue #298.
     EscrowNotLocked = 6,
+    InvalidIndexKind = 7,
 }
 
 mod constants {
@@ -180,6 +181,9 @@ fn validate_delivery_metadata(
     if metadata.destination.len() < constants::MIN_LOCATION_LEN
         || metadata.destination.len() > constants::MAX_LOCATION_LEN
     {
+        return Err(DeliveryError::InvalidMetadata);
+    }
+    if metadata.origin == metadata.destination {
         return Err(DeliveryError::InvalidMetadata);
     }
     if metadata.cargo_description.weight_grams == 0
@@ -342,6 +346,9 @@ impl DeliveryContract {
         env.storage()
             .instance()
             .set(&DataKey::RequireKyc, &required);
+        env.storage()
+            .instance()
+            .extend_ttl(ttl::LEDGER_TTL_THRESHOLD, ttl::LEDGER_TTL_EXTEND_TO);
         env.events().publish(
             (Symbol::new(&env, "require_kyc_updated"),),
             (admin, required),
@@ -1134,6 +1141,15 @@ impl DeliveryContract {
     /// Validates that delivery and escrow states match expected protocol invariants.
     /// Returns true if states are synchronized, false if a mismatch is detected.
     fn validate_state_sync(delivery: &DeliveryRecord, escrow: &shared_types::EscrowRecord) -> bool {
+        if delivery.sender != escrow.sender || delivery.recipient != escrow.recipient {
+            return false;
+        }
+        if let Some(driver) = &delivery.driver {
+            if driver != &escrow.driver {
+                return false;
+            }
+        }
+
         match (&delivery.status, &escrow.status) {
             // Pending/Active: escrow should be Locked
             (DeliveryStatus::Pending, shared_types::EscrowStatus::Locked) => true,
@@ -1186,6 +1202,9 @@ impl DeliveryContract {
 
     #[rustfmt::skip]
     pub fn get_deliveries_page(env: Env, owner: Address, kind: u32, offset: u32, limit: u32) -> soroban_sdk::Vec<DeliveryId> {
+        if kind > 2 {
+            panic_with_error!(&env, DeliveryError::InvalidIndexKind);
+        }
         index_page(&env, owner, kind, offset, limit)
     }
 
