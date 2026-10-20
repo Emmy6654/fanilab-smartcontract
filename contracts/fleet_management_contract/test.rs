@@ -1036,6 +1036,34 @@ fn test_get_payout_address_falls_back_when_fleet_profile_is_missing() {
     assert_eq!(event.driver, driver);
 }
 
+/// Regression: an *inactive* (deactivated) fleet profile is a routing
+/// fallback too, and must publish `payout_routing_fallback` just like the
+/// missing-profile case above — previously it returned the driver address
+/// silently.
+#[test]
+fn test_get_payout_address_falls_back_when_fleet_is_deactivated() {
+    let (env, client, _admin) = setup_test();
+    let (fleet_id, owner, _treasury) = register_fleet(&env, &client);
+    let driver = Address::generate(&env);
+
+    client.add_driver_to_fleet(&owner, &fleet_id, &driver, &no_co_signers(&env));
+    client.accept_fleet_invite(&fleet_id, &driver);
+
+    client.deactivate_fleet(&owner, &fleet_id);
+    assert!(!client.get_fleet(&fleet_id).active);
+
+    // The driver is still an active fleet member, but the fleet itself is
+    // inactive, so payouts fall back to the driver — with the event emitted.
+    assert_eq!(client.get_payout_address(&driver, &fleet_id), driver);
+    let last_event = last_event(&env);
+    let topic: Symbol = Symbol::try_from_val(&env, &last_event.1.get(0).unwrap()).unwrap();
+    assert_eq!(topic, Symbol::new(&env, "payout_routing_fallback"));
+    let event: PayoutRoutingFallbackEvent =
+        PayoutRoutingFallbackEvent::try_from_val(&env, &last_event.2).unwrap();
+    assert_eq!(event.fleet_id, fleet_id);
+    assert_eq!(event.driver, driver);
+}
+
 // ── Issue #110 tests — set_identity_contract coverage ─────────────────────────
 
 #[test]

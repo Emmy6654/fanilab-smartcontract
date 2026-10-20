@@ -1154,8 +1154,13 @@ impl FleetManagementContract {
                     .get(&DataKey::Fleet(fleet_id));
                 match profile {
                     Some(profile) if profile.active => profile.treasury,
-                    Some(_) => driver,
-                    None => {
+                    // An inactive fleet and a missing fleet profile both fall
+                    // back to the driver's own address — publish the
+                    // routing-fallback event in both cases so off-chain
+                    // monitors can observe the downgrade.  Previously an
+                    // inactive fleet fell back silently, hiding the routing
+                    // change from event consumers.
+                    Some(_) | None => {
                         env.events().publish(
                             (events::payout_routing_fallback(&env),),
                             PayoutRoutingFallbackEvent {
