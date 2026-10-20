@@ -127,6 +127,7 @@ pub enum DeliveryError {
 }
 
 mod constants {
+    pub const MIN_LOCATION_LEN: u32 = 2;
     pub const MAX_LOCATION_LEN: u32 = 256;
     pub const MAX_WEIGHT_GRAMS: u32 = 1_000_000;
 }
@@ -171,10 +172,14 @@ fn validate_delivery_metadata(
     _env: &Env,
     metadata: &DeliveryMetadata,
 ) -> Result<(), DeliveryError> {
-    if metadata.origin.is_empty() || metadata.origin.len() > constants::MAX_LOCATION_LEN {
+    if metadata.origin.len() < constants::MIN_LOCATION_LEN
+        || metadata.origin.len() > constants::MAX_LOCATION_LEN
+    {
         return Err(DeliveryError::InvalidMetadata);
     }
-    if metadata.destination.is_empty() || metadata.destination.len() > constants::MAX_LOCATION_LEN {
+    if metadata.destination.len() < constants::MIN_LOCATION_LEN
+        || metadata.destination.len() > constants::MAX_LOCATION_LEN
+    {
         return Err(DeliveryError::InvalidMetadata);
     }
     if metadata.cargo_description.weight_grams == 0

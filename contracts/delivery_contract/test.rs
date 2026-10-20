@@ -1397,6 +1397,28 @@ fn test_accept_minimum_valid_weight() {
 
 #[test]
 #[should_panic(expected = "2")] // DeliveryError::InvalidMetadata
+fn test_create_delivery_rejects_single_character_origin() {
+    let env = Env::default();
+    let (client, shipper, _, recipient, _, _) = setup_full(&env);
+    let mut metadata = get_test_metadata(&env, 1);
+    metadata.origin = String::from_str(&env, "a");
+
+    client.create_delivery(&shipper, &recipient, &metadata);
+}
+
+#[test]
+#[should_panic(expected = "2")] // DeliveryError::InvalidMetadata
+fn test_create_delivery_rejects_single_character_destination() {
+    let env = Env::default();
+    let (client, shipper, _, recipient, _, _) = setup_full(&env);
+    let mut metadata = get_test_metadata(&env, 1);
+    metadata.destination = String::from_str(&env, "a");
+
+    client.create_delivery(&shipper, &recipient, &metadata);
+}
+
+#[test]
+#[should_panic(expected = "2")] // DeliveryError::InvalidMetadata
 fn test_batch_rejects_invalid_metadata() {
     let env = Env::default();
     let (client, shipper, _, recipient, _, _) = setup_full(&env);
@@ -2790,4 +2812,3 @@ fn test_assign_driver_succeeds_registered_active_driver() {
         DeliveryStatus::Active
     );
 }
-

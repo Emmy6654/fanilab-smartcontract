@@ -1603,6 +1603,80 @@ fn test_propose_admin_sets_pending_admin() {
 }
 
 #[test]
+fn test_propose_admin_emits_event_and_admin_can_cancel_proposal() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let new_admin = Address::generate(&env);
+
+    client.init(&admin, &token, &0);
+    client.propose_admin(&admin, &new_admin);
+
+    let (topics, data) = last_event(&env);
+    let topic: Symbol = Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(topic, events::admin_proposed(&env));
+    let payload: (Address, Address) =
+        <(Address, Address)>::try_from_val(&env, &data).unwrap();
+    assert_eq!(payload, (admin.clone(), new_admin.clone()));
+
+    client.cancel_admin_proposal(&admin);
+    assert_eq!(client.get_admin(), admin);
+    match client.try_accept_admin(&new_admin) {
+        Err(Ok(err)) => assert_eq!(err, FaniLabError::InvalidState.into()),
+        _ => panic!("Expected FaniLabError::InvalidState after cancelling the proposal"),
+    }
+
+    let (topics, data) = last_event(&env);
+    let topic: Symbol = Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(topic, events::admin_proposal_cancelled(&env));
+    let payload: (Address, Address) =
+        <(Address, Address)>::try_from_val(&env, &data).unwrap();
+    assert_eq!(payload, (admin, new_admin));
+}
+
+#[test]
+fn test_cancel_admin_proposal_rejects_non_admin() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let new_admin = Address::generate(&env);
+
+    client.init(&admin, &token, &0);
+    client.propose_admin(&admin, &new_admin);
+
+    match client.try_cancel_admin_proposal(&attacker) {
+        Err(Ok(err)) => assert_eq!(err, FaniLabError::Unauthorized.into()),
+        _ => panic!("Expected FaniLabError::Unauthorized for non-admin cancellation"),
+    }
+
+    client.accept_admin(&new_admin);
+    assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+fn test_cancel_admin_proposal_requires_pending_nomination() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    client.init(&admin, &token, &0);
+
+    match client.try_cancel_admin_proposal(&admin) {
+        Err(Ok(err)) => assert_eq!(err, FaniLabError::InvalidState.into()),
+        _ => panic!("Expected FaniLabError::InvalidState when no proposal is pending"),
+    }
+}
+
+#[test]
 fn test_accept_admin_completes_transfer() {
     let (env, contract_id) = setup_env();
     let client = EscrowContractClient::new(&env, &contract_id);
@@ -6279,6 +6353,53 @@ fn test_set_holdback_window_accepts_exact_minimum() {
     client.init(&admin, &token, &0);
 
     client.set_holdback_window(&admin, &constants::MIN_HOLDBACK_WINDOW_SECONDS);
+
+    assert_eq!(
+        client.get_holdback_window(),
+        constants::MIN_HOLDBACK_WINDOW_SECONDS
+    );
+}
+
+/// Exactly the maximum is accepted.
+#[test]
+fn test_set_holdback_window_accepts_exact_maximum() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    client.init(&admin, &token, &0);
+
+    client.set_holdback_window(&admin, &constants::MAX_HOLDBACK_WINDOW_SECONDS);
+
+    assert_eq!(
+        client.get_holdback_window(),
+        constants::MAX_HOLDBACK_WINDOW_SECONDS
+    );
+}
+
+/// A value above the maximum is rejected and leaves the configured window
+/// unchanged.
+#[test]
+fn test_set_holdback_window_rejects_above_maximum() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    client.init(&admin, &token, &0);
+
+    client.set_holdback_window(&admin, &constants::MIN_HOLDBACK_WINDOW_SECONDS);
+    let result = client.try_set_holdback_window(
+        &admin,
+        &(constants::MAX_HOLDBACK_WINDOW_SECONDS + 1),
+    );
+    match result {
+        Err(Ok(err)) => assert_eq!(err, EscrowError::InvalidState.into()),
+        _ => panic!("Expected EscrowError::InvalidState for an above-maximum window"),
+    }
 
     assert_eq!(
         client.get_holdback_window(),
