@@ -201,6 +201,10 @@ pub mod events {
         Symbol::new(env, "delivery_contract_updated")
     }
 
+    pub fn identity_reputation_contract_updated(env: &Env) -> Symbol {
+        Symbol::new(env, "identity_reputation_contract_updated")
+    }
+
     pub fn dispute_contract_updated(env: &Env) -> Symbol {
         Symbol::new(env, "dispute_contract_updated")
     }

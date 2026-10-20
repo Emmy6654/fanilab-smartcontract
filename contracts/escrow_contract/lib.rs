@@ -25,6 +25,7 @@ pub mod constants {
     pub const MAX_BATCH_SIZE: u32 = 100;
     pub const DEFAULT_ESCROW_EXPIRY_SECONDS: u64 = 30 * 24 * 60 * 60; // 30 days
     pub const MAX_PLATFORM_FEE_BPS: u32 = 1000;
+    pub const MAX_SLIPPAGE_TOLERANCE_BPS: u32 = 1000;
     pub const SETTLEMENT_CONTRACT_TIMELOCK_SECONDS: u64 = 3 * 24 * 60 * 60; // 3 days
     /// Default time a recipient has, after confirming delivery (i.e. after
     /// `mark_holdback_escrow` moves an escrow into `Holdback`), to either
@@ -593,6 +594,7 @@ pub enum EscrowError {
     InvalidParties = 11,
     /// A batch operation (`create_escrows_batch`) exceeded `MAX_BATCH_SIZE`.
     BatchTooLarge = 12,
+    InvalidSlippageTolerance = 13,
 }
 
 #[contracttype]
@@ -749,8 +751,8 @@ impl EscrowContract {
             panic_with_error!(&env, FaniLabError::Unauthorized);
         }
         admin.require_auth();
-        if new_slippage_bps > 10000 {
-            panic_with_error!(&env, EscrowError::InvalidFee);
+        if new_slippage_bps > constants::MAX_SLIPPAGE_TOLERANCE_BPS {
+            panic_with_error!(&env, EscrowError::InvalidSlippageTolerance);
         }
         let mut config = load_protocol_config(&env);
         let old_slippage_bps = config.slippage_tolerance_bps;
@@ -856,6 +858,7 @@ impl EscrowContract {
     }
 
     // Issue #90: allow an admin to unset a previously configured settlement_contract.
+    #[allow(deprecated)] // events().publish() is deprecated in SDK 28 but remains functional
     pub fn clear_settlement_contract(env: Env, admin: Address) {
         admin.require_auth();
         require_admin(&env, &admin);
@@ -866,6 +869,10 @@ impl EscrowContract {
             .instance()
             .remove(&DataKey::PendingSettlementContract);
         extend_instance_ttl(&env);
+        env.events().publish(
+            (Symbol::new(&env, "settlement_contract_cleared"),),
+            (admin, env.ledger().timestamp()),
+        );
     }
 
     pub fn set_fleet_management_contract(env: Env, admin: Address, fleet_contract: Address) {
@@ -897,6 +904,7 @@ impl EscrowContract {
     /// disable the protocol's ability to freeze a suspicious escrow. The
     /// intended remedy for a bad dispute contract is to repoint it with
     /// `set_dispute_resolution_contract`, not to remove the integration.
+    #[allow(deprecated)] // events().publish() is deprecated in SDK 28 but remains functional
     pub fn clear_fleet_management_contract(env: Env, admin: Address) {
         admin.require_auth();
         require_admin(&env, &admin);
@@ -904,6 +912,10 @@ impl EscrowContract {
             .instance()
             .remove(&DataKey::FleetManagementContract);
         extend_instance_ttl(&env);
+        env.events().publish(
+            (Symbol::new(&env, "fleet_management_contract_cleared"),),
+            (admin, env.ledger().timestamp()),
+        );
     }
 
     pub fn set_dispute_resolution_contract(env: Env, admin: Address, dispute_contract: Address) {
@@ -2225,6 +2237,11 @@ impl EscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::VolumeTiers, &tiers);
+        env.storage().persistent().extend_ttl(
+            &DataKey::VolumeTiers,
+            ttl::LEDGER_TTL_THRESHOLD,
+            ttl::LEDGER_TTL_EXTEND_TO,
+        );
         env.events().publish(
             (Symbol::new(&env, "volume_tiers_updated"),),
             (admin, tiers.len()),

@@ -1024,6 +1024,27 @@ fn test_update_slippage_tolerance() {
     assert_eq!(client.get_slippage_tolerance(), 1000);
 }
 
+#[test]
+fn test_update_slippage_tolerance_rejects_values_above_maximum() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    client.init(&admin, &token, &0);
+    let result = client.try_update_slippage_tolerance(
+        &admin,
+        &(constants::MAX_SLIPPAGE_TOLERANCE_BPS + 1),
+    );
+
+    match result {
+        Err(Ok(err)) => assert_eq!(err, EscrowError::InvalidSlippageTolerance.into()),
+        _ => panic!("Expected EscrowError::InvalidSlippageTolerance"),
+    }
+    assert_eq!(client.get_slippage_tolerance(), 500);
+}
+
 /// Issue #469 — the setter must publish `slippage_tolerance_updated` with the
 /// old and new bps so indexers can track slippage-constraint history.
 #[test]
@@ -1404,6 +1425,26 @@ fn test_clear_settlement_contract_reverts_to_none() {
 
     client.clear_settlement_contract(&admin);
     assert_eq!(client.get_settlement_contract(), None);
+}
+
+#[test]
+fn test_clear_settlement_contract_emits_audit_event() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    client.init(&admin, &token, &0);
+    client.clear_settlement_contract(&admin);
+
+    let (topics, data) = last_event(&env);
+    let topic: Symbol = Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(topic, Symbol::new(&env, "settlement_contract_cleared"));
+    assert_eq!(
+        data,
+        (admin, env.ledger().timestamp()).into_val(&env)
+    );
 }
 
 #[test]
@@ -4813,6 +4854,26 @@ fn test_clear_fleet_management_contract_reverts_to_none() {
 }
 
 #[test]
+fn test_clear_fleet_management_contract_emits_audit_event() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    client.init(&admin, &token, &0);
+    client.clear_fleet_management_contract(&admin);
+
+    let (topics, data) = last_event(&env);
+    let topic: Symbol = Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(topic, Symbol::new(&env, "fleet_management_contract_cleared"));
+    assert_eq!(
+        data,
+        (admin, env.ledger().timestamp()).into_val(&env)
+    );
+}
+
+#[test]
 fn test_clear_nonexistent_fleet_management_contract_succeeds() {
     let (env, contract_id) = setup_env();
     let client = EscrowContractClient::new(&env, &contract_id);
@@ -6748,6 +6809,24 @@ fn default_persistent_ttl(env: &Env, contract_id: &Address) -> u32 {
         env.storage().persistent().set(&key, &1u32);
         env.storage().persistent().get_ttl(&key)
     })
+}
+
+#[test]
+fn test_volume_tiers_ttl_is_extended() {
+    let (env, contract_id) = setup_env();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    client.init(&admin, &token, &0);
+    client.set_volume_tiers(&admin, &soroban_sdk::Vec::new(&env));
+
+    let ttl = env.as_contract(&contract_id, || {
+        env.storage().persistent().get_ttl(&DataKey::VolumeTiers)
+    });
+    assert_eq!(ttl, EXPECTED_VOLUME_TTL);
+    assert!(ttl > default_persistent_ttl(&env, &contract_id));
 }
 
 #[test]
